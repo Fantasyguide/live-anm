@@ -4,17 +4,18 @@ import { createPlayer } from './player.js';
 import { toDoc, docToBytes, flatScripts, flatSprites, addScript, addSprite, download } from './doc.js';
 import { flattenFile } from '@engine/host/manager.js';
 import { parseAnm } from '@engine/format/anm-v8.js';
-import { disassemble } from '@engine/disasm.js';
+import { disassemble, lineOfPc } from '@engine/disasm.js';
 import { triggerInterrupt } from '@engine/vm/core.js';
 import ScriptList from './components/ScriptList.vue';
 import SpriteList from './components/SpriteList.vue';
 import Stage from './components/Stage.vue';
-import Editor from './components/Editor.vue';
-import Disasm from './components/Disasm.vue';
+import CodePane from './components/CodePane.vue';
+import VmState from './components/VmState.vue';
 import VmInspector from './components/VmInspector.vue';
 
-const doc = ref(null);              // 可编辑文档（脚本以文本持有）
-const file = shallowRef(null);      // 运行时视图（flattenFile 的结果）
+const doc = ref(null);
+const file = shallowRef(null);
+const sourceLines = shallowRef([]);      // [全局 script 序号][指令下标] = 文本行号
 const fileName = ref('');
 const error = ref('');
 const buildErrors = ref([]);
@@ -42,13 +43,29 @@ const editorText = computed({
 const vms = computed(() => (frame.value, player.value?.manager.vms ?? []));
 const skipped = computed(() => (frame.value, player.value?.manager.skipped ?? []));
 const errors = computed(() => (frame.value, player.value?.errors ?? []));
-const disasm = computed(() => (selectedVm.value ? disassemble({ instructions: selectedVm.value._instructions }) : null));
+
+/** 选中的 VM 跑的是哪个全局 script —— 靠指令数组的**引用相同**来认（createVm 存的就是它）。 */
+const vmScriptIndex = computed(() => {
+  if (!selectedVm.value || !file.value) return -1;
+  return file.value.scripts.findIndex((s) => s.script.instructions === selectedVm.value._instructions);
+});
+const vmDisasm = computed(() => (selectedVm.value ? disassemble({ instructions: selectedVm.value._instructions }) : null));
+const caseLabels = computed(() => vmDisasm.value?.caseLabels ?? []);
+
+/** 编辑器里该高亮第几行：pc → 指令下标 → 文本行号。 */
+const currentLine = computed(() => {
+  frame.value;
+  const si = vmScriptIndex.value;
+  if (si < 0 || si !== selScript.value || !vmDisasm.value) return -1;   // 只在看同一个脚本时高亮
+  const idx = lineOfPc(vmDisasm.value, selectedVm.value.pc);
+  if (idx < 0) return -1;
+  return sourceLines.value[si]?.[idx] ?? -1;
+});
 
 async function openFile(f) {
   error.value = '';
   try {
-    const bytes = new Uint8Array(await f.arrayBuffer());
-    doc.value = toDoc(bytes);
+    doc.value = toDoc(new Uint8Array(await f.arrayBuffer()));
     fileName.value = f.name;
     selScript.value = 0; selSprite.value = 0; selectedVm.value = null;
     await nextTick();
@@ -56,13 +73,13 @@ async function openFile(f) {
   } catch (e) { error.value = `解析失败：${e.message}`; doc.value = null; }
 }
 
-/** 文本 → 字节 → 运行时视图 → 新播放器。编辑之后按这条路重来一遍。 */
 function rebuild() {
   if (!doc.value) return;
   stop();
   try {
-    const { bytes, errors: errs } = docToBytes(doc.value);
+    const { bytes, errors: errs, sourceLines: sl } = docToBytes(doc.value);
     buildErrors.value = errs;
+    sourceLines.value = sl;
     file.value = flattenFile(bytes, parseAnm(bytes));
     if (!canvasEl.value) return;
     player.value = createPlayer(canvasEl.value, file.value, { width: view.value.w, height: view.value.h });
@@ -99,6 +116,8 @@ function exportAnm() {
   if (errs.length) { error.value = `还有 ${errs.length} 处汇编错误，先修掉再导出`; return; }
   download(bytes, fileName.value || 'edited.anm');
 }
+// 选中 VM 时自动切到它跑的那个脚本，不然高亮无处可显
+watch(selectedVm, () => { if (vmScriptIndex.value >= 0) selScript.value = vmScriptIndex.value; });
 watch(view, (v) => player.value?.resize(v.w, v.h), { deep: true });
 </script>
 
@@ -133,35 +152,36 @@ watch(view, (v) => player.value?.resize(v.w, v.h), { deep: true });
       </p>
     </div>
 
-    <template v-else>
-      <div class="grid">
-        <section class="col">
-          <div class="tabs">
-            <button :class="{ on: tab === 'script' }" @click="tab = 'script'">Script</button>
-            <button :class="{ on: tab === 'sprite' }" @click="tab = 'sprite'">Sprite</button>
-          </div>
-          <ScriptList v-if="tab === 'script'" v-model="selScript" :scripts="scripts" :entries="doc.entries"
-                      @add="addScript(doc, cur?.entryIndex ?? 0); rebuild()" />
-          <SpriteList v-else v-model="selSprite" :sprites="sprites"
-                      @add="addSprite(doc, cur?.entryIndex ?? 0)" @change="() => {}" />
-        </section>
+    <div v-else class="grid">
+      <!-- 左：表 -->
+      <section class="col side">
+        <div class="tabs">
+          <button :class="{ on: tab === 'script' }" @click="tab = 'script'">Script</button>
+          <button :class="{ on: tab === 'sprite' }" @click="tab = 'sprite'">Sprite</button>
+        </div>
+        <ScriptList v-if="tab === 'script'" v-model="selScript" :scripts="scripts" :entries="doc.entries"
+                    @add="addScript(doc, cur?.entryIndex ?? 0); rebuild()" />
+        <SpriteList v-else v-model="selSprite" :sprites="sprites"
+                    @add="addSprite(doc, cur?.entryIndex ?? 0)" @change="() => {}" />
+      </section>
 
-        <section class="col main">
-          <Stage v-model:view="view" v-model:spawnAt="spawnAt" v-model:speed="speed" v-model:canvasEl="canvasEl"
-                 :playing="playing" :frame="frame" :vm-count="vms.length" :skipped="skipped" :errors="errors"
-                 @spawn="spawn" @toggle="playing ? stop() : play()" @step="stepOnce" @reset="rebuild"
-                 @center="spawnAt = { x: Math.round(view.w / 2), y: Math.round(view.h / 2) }" />
-        </section>
-
-        <section class="col editorcol">
-          <Editor v-model:text="editorText" :disabled="!cur"
+      <!-- 中：VM 状态 + 代码（主导区） -->
+      <section class="col center">
+        <VmState :vm="selectedVm" :frame="frame" :case-labels="caseLabels" @interrupt="onInterrupt" />
+        <CodePane v-model:text="editorText" :disabled="!cur" :current-line="currentLine"
                   :title="cur ? `script #${selScript} · ${cur.entryName}` : '（未选中）'"
                   @apply="rebuild" />
-          <VmInspector :vms="vms" :selected="selectedVm" :frame="frame" @pick="(vm) => (selectedVm = vm)" />
-        </section>
-      </div>
-      <Disasm :disasm="disasm" :vm="selectedVm" :frame="frame" :script-index="selScript" @interrupt="onInterrupt" />
-    </template>
+      </section>
+
+      <!-- 右：预览 + VM 列表 -->
+      <section class="col side">
+        <Stage v-model:view="view" v-model:spawnAt="spawnAt" v-model:speed="speed" v-model:canvasEl="canvasEl"
+               :playing="playing" :frame="frame" :vm-count="vms.length" :skipped="skipped" :errors="errors"
+               @spawn="spawn" @toggle="playing ? stop() : play()" @step="stepOnce" @reset="rebuild"
+               @center="spawnAt = { x: Math.round(view.w / 2), y: Math.round(view.h / 2) }" />
+        <VmInspector :vms="vms" :selected="selectedVm" :frame="frame" @pick="(vm) => (selectedVm = vm)" />
+      </section>
+    </div>
 
     <footer>
       本站不含任何游戏数据 · 代码 MIT · ANM 格式与东方 Project 的一切权利归上海爱丽丝幻乐团 / ZUN 所有

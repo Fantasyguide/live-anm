@@ -33,10 +33,14 @@ function parseVarId(token) {
 
 /**
  * 文本 → 指令数组。**不抛**：错误逐条收集，带行号，让编辑器能一次显示全部问题。
- * @returns {{ instructions: Array, errors: Array<{line:number, message:string}> }}
+ *
+ * `sourceLines[i]` = 第 i 条指令来自文本的第几行（1 起）。编辑器里可以有注释和空行，
+ * 所以**指令下标 ≠ 行号**——要在编辑器里高亮「正在执行哪一行」就必须有这张表。
+ * @returns {{ instructions: Array, errors: Array<{line:number, message:string}>, sourceLines: number[] }}
  */
 export function assemble(text) {
   const instructions = [];
+  const sourceLines = [];
   const errors = [];
   const lines = text.split('\n');
 
@@ -95,9 +99,10 @@ export function assemble(text) {
     });
     if (bad) return;
     instructions.push({ time, opcode, paramMask, args });
+    sourceLines.push(lineNo);
   });
 
-  return { instructions, errors };
+  return { instructions, errors, sourceLines };
 }
 
 /** 指令数组 → 文本。与 assemble 互为逆运算（往返测试盯着这一点）。 */

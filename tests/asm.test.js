@@ -113,3 +113,29 @@ test('浮点回文本时保证能读回同一个 float32', () => {
   const back = assemble(disassembleText(instructions)).instructions;
   assert.deepEqual(back.map((i) => i.args[0]), instructions.map((i) => i.args[0]));
 });
+
+test('sourceLines：指令 ↔ 文本行号（编辑器高亮「正在执行哪一行」要用）', () => {
+  // 编辑器里可以有注释和空行 ⇒ **指令下标 ≠ 行号**，必须有这张表。
+  const { instructions, sourceLines } = assemble([
+    '// 头注释',
+    '',
+    '0: sprite(0);',      // 行 3
+    '',
+    '# 井号注释',
+    '30: pos(1, 2, 3);',  // 行 6
+    '60: nop();',         // 行 7
+  ].join('\n'));
+  assert.equal(instructions.length, 3);
+  assert.deepEqual(sourceLines, [3, 6, 7]);
+});
+
+test('sourceLines：出错的行不占位，后续指令的行号仍然对', () => {
+  const { instructions, sourceLines, errors } = assemble([
+    '0: sprite(0);',   // 行 1 → 指令 0
+    'garbage',         // 行 2 → 错误，不产生指令
+    '9: nop();',       // 行 3 → 指令 1
+  ].join('\n'));
+  assert.equal(errors.length, 1);
+  assert.equal(instructions.length, 2);
+  assert.deepEqual(sourceLines, [1, 3]);
+});

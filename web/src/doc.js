@@ -31,16 +31,20 @@ export function flatSprites(doc) {
 /** 把所有脚本文本汇编一遍；返回 { bytes, errors }，errors 带 entry / script 定位。 */
 export function docToBytes(doc) {
   const errors = [];
+  // sourceLines[全局 script 序号][指令下标] = 文本行号。编辑器高亮「正在执行哪一行」要用：
+  // 文本里有注释和空行 ⇒ 指令下标 ≠ 行号。
+  const sourceLines = [];
   const entries = doc.entries.map((e, ei) => ({
     ...e,
     sprites: e.sprites,
     scripts: e.scriptTexts.map((text, i) => {
       const r = assemble(text);
       r.errors.forEach((err) => errors.push({ ...err, entryIndex: ei, scriptIndex: i, entryName: e.name }));
+      sourceLines.push(r.sourceLines);   // 与 flatScripts 的顺序一致（entry 内序号递增）
       return { id: e.scripts[i]?.id ?? i, instructions: r.instructions };
     }),
   }));
-  return { bytes: buildAnmFile({ entries }), errors };
+  return { bytes: buildAnmFile({ entries }), errors, sourceLines };
 }
 
 export function addScript(doc, entryIndex) {
