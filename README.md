@@ -33,22 +33,30 @@
 ## 跑起来
 
 ```bash
-npm test          # 304 个测试，零依赖，只要有 node
+npm test          # 312 个测试，**不需要装任何依赖**，裸 node 就能跑
 ```
 
-网页版是**纯静态**的，不需要构建（Vue 走 import map 从 CDN 取，`src/` 本来就是浏览器
-能直接 import 的 ESM）。**在仓库根目录**起个静态服务器即可——`web/` 里用 `../src/...`
-引用运行时，所以站点根必须是仓库根：
+网页版是标准的 Vite + Vue 3 SFC 工程：
 
 ```bash
-python3 -m http.server 8080          # 然后打开 http://localhost:8080/web/
+npm ci
+npm run dev       # 开发服务器
+npm run build     # → dist/（GitHub Pages 发的就是它）
+npm run preview   # 预览打包产物
 ```
 
-**浏览器自测**：`/web/selftest.html` 会用仓库自带的合成夹具跑一遍完整管线
+`npm test` 与构建**是两条独立的路**：运行时（`src/`）是零依赖的纯 ESM，测试直接
+`node --test`；Vue / Vite 只是网页壳子的依赖，不装也能跑测试、也能把 `src/` 拿去用。
+
+打包产物里还会附一份**未打包的 `dist/src/`**（`scripts/postbuild.mjs` 拷的）——
+这个项目的卖点之一是「引擎知识的可执行形式」，保留可直接 import 的 ESM 方便别人
+`import('https://fantasyguide.github.io/live-anm/src/vm/core.js')` 拿去用。
+
+**浏览器自测**：`/selftest.html` 用仓库自带的合成夹具跑一遍完整管线
 （解析 → 贴图 → VM → 几何 → WebGL → `readPixels` 读回像素），确认真实 WebGL 路径通。
-Node 里那 312 个测试用的是 mock GL，**真实 GL 的行为只有浏览器能验** ——
-开发机上没有可用的 GL（headless 无上下文、VNC 里软件合成失败），所以这一条
-**尚未在真浏览器上验证过**，请以 selftest 页面的结果为准。
+Node 里那 312 个测试用的是 mock GL，**真实 GL 的行为只有浏览器能验**——开发机上没有
+可用的 GL（headless 取不到上下文、VNC 里软件合成失败），所以这一条**尚未在真浏览器上
+验证过**，请以自测页的结果为准。
 
 ## 保真度
 

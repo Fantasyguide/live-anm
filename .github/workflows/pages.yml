@@ -1,8 +1,7 @@
-# 把仓库原样发到 GitHub Pages。
+# 构建并发布到 GitHub Pages。
 #
-# **没有构建步骤**：web/ 是纯静态的（Vue 走 import map 从 CDN 取），而 src/ 本来就是
-# 浏览器能直接 import 的 ESM。所以整个仓库根目录就是站点根 —— web/index.html 里的
-# `../src/...` 在线上和本地都成立。根目录的 index.html 只是跳转到 ./web/。
+# 标准的 Vite 工作流：`npm ci` → `npm test` → `npm run build` → 发 dist/。
+# base 在 vite.config.js 里固定成 '/live-anm/'（Pages 挂在 /<repo>/ 下，默认的 '/' 会 404）。
 name: Pages
 
 on:
@@ -20,30 +19,33 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '22' }
-      # 零依赖，不需要 npm install
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      # 测试本身不需要任何依赖（裸 node --test），但装完再跑顺带验了锁文件是好的
       - run: npm test
+      - run: npm run build
+      - uses: actions/configure-pages@v5
+        with:
+          # 首次推送时 Pages 还没启用，不加这个 configure-pages 会以
+          # 「Get Pages site failed / Not Found」失败。
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
 
   deploy:
-    needs: test
+    needs: build
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
-        with:
-          # 让 workflow 自己把 Pages 打开——首次推送时 Pages 还没启用，configure-pages
-          # 会以 "Get Pages site failed / Not Found" 失败。加上这个就不需要先手动开。
-          enablement: true
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: '.'
       - id: deployment
         uses: actions/deploy-pages@v4

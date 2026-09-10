@@ -1,7 +1,7 @@
 // 把 format / host / render 三层粘起来的最小播放器。Vue 那层只管 UI，不碰这里的细节。
-import { parseAnm } from '../src/format/anm-v8.js';
-import { flattenFile, createManager } from '../src/host/manager.js';
-import { createRenderer, uploadTexture } from '../src/render/webgl.js';
+import { parseAnm } from '@engine/format/anm-v8.js';
+import { flattenFile, createManager } from '@engine/host/manager.js';
+import { createRenderer, uploadTexture } from '@engine/render/webgl.js';
 
 export function loadAnm(bytes) {
   const parsed = parseAnm(bytes);
