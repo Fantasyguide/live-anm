@@ -138,8 +138,17 @@ export function createManager(file, opts = {}) {
     return vm;
   }
 
-  /** 建一个顶层 VM 跑指定的全局 script 序号。 */
-  function spawn(scriptIndex) {
+  /**
+   * 建一个顶层 VM 跑指定的全局 script 序号。
+   *
+   * `opts.entityPos` —— **摆在哪**。真机里 ANM 脚本自己从不决定绝对位置：`final_pos` 是
+   * `pos + pos_2 + entity_pos`（`th16:0x406c40`），其中 **`entity_pos`（`+0x5e0`）是「宿主实体
+   * 坐标」**——敌人 / 子弹 / 自机对象把自己的位置写进这个字段，脚本只管相对动画。
+   * 02 §3.3 还专门记了 `AnmVm::wipe` **保留** `+0x5e0..0x5eb` 不清，正因为它属于宿主不属于脚本。
+   * 所以「指定某个位置播放」的引擎正解就是设它，而不是去改 `vm.pos`（那是脚本自己会动画的量）。
+   * 不给就是 (0,0,0)，与真机「宿主还没写过」的状态一致。
+   */
+  function spawn(scriptIndex, spawnOpts = {}) {
     const rec = file.scripts[scriptIndex];
     if (!rec) throw new Error(`manager.spawn: 没有全局序号 ${scriptIndex} 的 script（共 ${file.scripts.length} 条）`);
     const vm = createVm(rec.script, {
@@ -147,7 +156,12 @@ export function createManager(file, opts = {}) {
       frameTail: stepFrameTail,
       getRootVm,
     });
-    ensureGeneralState(vm);
+    const g = ensureGeneralState(vm);
+    if (spawnOpts.entityPos) {
+      g.entityPos.x = spawnOpts.entityPos.x ?? 0;
+      g.entityPos.y = spawnOpts.entityPos.y ?? 0;
+      g.entityPos.z = spawnOpts.entityPos.z ?? 0;
+    }
     const cs = ensureChildState(vm);
     // 08 §5：`500–506` 要靠这两张表才能建子——脚本表是文件级的，ops 表是「创建即 tick」用的。
     cs.scripts = file.scripts.map((s) => s.script);

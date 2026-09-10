@@ -193,3 +193,36 @@ test('drawList：正常 sprite 出一份 quad 几何 + 对应 entry 的贴图', 
   // UV 取的是该 sprite 的四角
   assert.deepEqual([d.geometry.vertices[0].u, d.geometry.vertices[0].v], file.sprites[1].uv[0]);
 });
+
+// ── 「摆在哪」：entity_pos 是宿主的杠杆 ─────────────────────────────────────────
+test('spawn 的 entityPos 决定脚本画在哪（`th16:0x406c40` 的 final_pos 三项之一）', () => {
+  // 真机里 ANM 脚本从不决定绝对位置——`entity_pos`（+0x5e0）是宿主实体坐标，
+  // 敌人/子弹/自机把自己的位置写进去。02 §3.3：`wipe` 保留这块不清，正因为它属于宿主。
+  const file = mkFile([{ instructions: [ins(300, [0]), ins(0, [], { time: 99 })] }]);
+  const m = createManager(file);
+  m.spawn(0, { entityPos: { x: 320, y: 240, z: 0 } });
+  m.step();
+  const [d] = m.drawList();
+  // sprite 8×16、中心锚点 ⇒ 四角相对 (320,240) 落在 (±4, ±8)
+  assert.deepEqual([d.geometry.vertices[0].x, d.geometry.vertices[0].y], [316, 232]);
+  assert.deepEqual([d.geometry.vertices[3].x, d.geometry.vertices[3].y], [324, 248]);
+});
+
+test('不给 entityPos 就是 (0,0,0) —— 与真机「宿主还没写过」一致，不是 bug', () => {
+  const file = mkFile([{ instructions: [ins(300, [0]), ins(0, [], { time: 99 })] }]);
+  const m = createManager(file);
+  m.spawn(0);
+  m.step();
+  const [d] = m.drawList();
+  assert.deepEqual([d.geometry.vertices[0].x, d.geometry.vertices[0].y], [-4, -8]);
+});
+
+test('entityPos 与脚本自己的 pos 相加，不是互相覆盖', () => {
+  // 400 pos(10, 20, 0) —— 脚本的相对位移应当叠在宿主给的坐标上
+  const file = mkFile([{ instructions: [ins(300, [0]), ins(400, [f32b(10), f32b(20), f32b(0)]), ins(0, [], { time: 99 })] }]);
+  const m = createManager(file);
+  m.spawn(0, { entityPos: { x: 100, y: 200, z: 0 } });
+  m.step();
+  const [d] = m.drawList();
+  assert.deepEqual([d.geometry.vertices[0].x, d.geometry.vertices[0].y], [106, 212], '(100+10-4, 200+20-8)');
+});

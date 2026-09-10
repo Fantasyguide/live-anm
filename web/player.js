@@ -66,7 +66,7 @@ export function createPlayer(canvas, file, opts = {}) {
     manager,
     get frame() { return frame; },
     get errors() { return errors; },
-    spawn: (scriptIndex) => manager.spawn(scriptIndex),
+    spawn: (scriptIndex, spawnOpts) => manager.spawn(scriptIndex, spawnOpts),
     step,
     render,
     reset() {

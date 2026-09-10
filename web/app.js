@@ -17,6 +17,10 @@ const App = {
     const scriptFilter = ref('');
     const viewW = ref(640);
     const viewH = ref(480);
+    // 「摆在哪」= entity_pos（宿主实体坐标）。脚本自己不决定绝对位置，
+    // 默认放画布正中而不是 (0,0)——(0,0) 是左上角，多数脚本会有一半在画外。
+    const spawnX = ref(320);
+    const spawnY = ref(240);
     let raf = 0, acc = 0, last = 0;
 
     const entries = computed(() => file.value?.entries ?? []);
@@ -65,7 +69,9 @@ const App = {
     function spawn() {
       if (!player.value) return;
       try {
-        selectedVm.value = player.value.spawn(selectedScript.value);
+        selectedVm.value = player.value.spawn(selectedScript.value, {
+          entityPos: { x: spawnX.value, y: spawnY.value, z: 0 },
+        });
         frame.value = player.value.frame;
         player.value.render();
       } catch (e) { error.value = e.message; }
@@ -101,7 +107,8 @@ const App = {
 
     return {
       file, fileName, error, dragging, canvasEl, playing, frame, speed,
-      selectedScript, selectedVm, scriptFilter, viewW, viewH,
+      selectedScript, selectedVm, scriptFilter, viewW, viewH, spawnX, spawnY,
+      center: () => { spawnX.value = Math.round(viewW.value / 2); spawnY.value = Math.round(viewH.value / 2); },
       entries, scripts, vms, skipped, errors, detail,
       openFile, spawn, stepOnce, play, stop, reset, onDrop, inspect,
       onPick: (e) => e.target.files[0] && openFile(e.target.files[0]),
@@ -157,6 +164,11 @@ const App = {
         <div class="bar">
           <label class="dim">画布 <input type="number" v-model.number="viewW" min="64" max="1920" class="num"> ×
             <input type="number" v-model.number="viewH" min="64" max="1440" class="num"></label>
+          <label class="dim" title="entity_pos —— 真机里由宿主（敌人/子弹/自机）写进 VM 的实体坐标。脚本自己只管相对动画，所以「摆在哪」要在这里给。">
+            位置 <input type="number" v-model.number="spawnX" class="num"> ,
+            <input type="number" v-model.number="spawnY" class="num"></label>
+          <button @click="center">居中</button>
+          <span class="dim">（新建 VM 时生效）</span>
         </div>
 
         <div v-if="skipped.length" class="note">
