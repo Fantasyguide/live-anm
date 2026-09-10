@@ -80,18 +80,18 @@ export function assemble(text) {
     let bad = false;
     tokens.forEach((tok, k) => {
       // 未知 opcode 没有签名 ⇒ 一律按 int32（不猜）
-      const kind = sig ? sig[k] : 'i';
+      const role = sig ? sig[k] : 'S';
       if (tok.startsWith('$')) {
         const id = parseVarId(tok);
         if (id === null) { errors.push({ line: lineNo, message: `第 ${k + 1} 个参数：${tok} 不是合法的变量号` }); bad = true; return; }
         paramMask |= 1 << k;
         // 03-math-jumps.md §3 ④：浮点指令把变量号编成 float32 的位模式，整型指令写十进制
-        args.push(kind === 'f' ? floatToBits(id) : id >>> 0);
+        args.push(role === 'f' ? floatToBits(id) : id >>> 0);
         return;
       }
       const n = Number(tok);
       if (!Number.isFinite(n)) { errors.push({ line: lineNo, message: `第 ${k + 1} 个参数：${tok} 不是数字` }); bad = true; return; }
-      if (kind === 'f') args.push(floatToBits(n));
+      if (role === 'f') args.push(floatToBits(n));
       else {
         if (!Number.isInteger(n)) { errors.push({ line: lineNo, message: `第 ${k + 1} 个参数是整型（${name} 的签名），不能写 ${tok}` }); bad = true; return; }
         args.push(n >>> 0);
@@ -110,14 +110,14 @@ export function disassembleText(instructions) {
   return instructions.map((ins) => {
     const sig = signatureOf(ins.opcode);
     const args = ins.args.map((raw, k) => {
-      const kind = sig ? sig[k] : 'i';
+      const role = sig ? sig[k] : 'S';
       const isVar = ((ins.paramMask >>> k) & 1) === 1;
       if (isVar) {
-        const id = kind === 'f' ? Math.trunc(bitsToFloat(raw)) : raw | 0;
+        const id = role === 'f' ? Math.trunc(bitsToFloat(raw)) : raw | 0;
         const alias = Object.keys(VAR_ALIASES).find((a) => VAR_ALIASES[a] === id);
         return `$${alias ?? id}`;
       }
-      if (kind === 'f') {
+      if (role === 'f') {
         const v = bitsToFloat(raw);
         // 保证能被 Number() 读回同一个 float32：优先短表示，不行就用足够精度
         return Object.is(floatToBits(Number(v.toFixed(6))), raw) ? String(Number(v.toFixed(6))) : String(v);

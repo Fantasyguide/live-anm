@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, ref, shallowRef, watch } from 'vue';
 import { createPlayer } from './player.js';
-import { toDoc, docToBytes, flatScripts, flatSprites, addScript, addSprite, download } from './doc.js';
+import { toDoc, docToBytes, flatScripts, flatSprites, addScript, addSprite, download, switchView } from './doc.js';
 import { flattenFile } from '@engine/host/manager.js';
 import { parseAnm } from '@engine/format/anm-v8.js';
 import { disassemble, lineOfPc } from '@engine/disasm.js';
@@ -28,6 +28,7 @@ const speed = ref(1);
 const view = ref({ w: 640, h: 480 });
 const spawnAt = ref({ x: 320, y: 240 });
 const tab = ref('script');
+const syntaxView = ref('thanm');   // 默认给语法糖视图——手写脚本时它几乎是必需的
 const selScript = ref(0);
 const selSprite = ref(0);
 const selectedVm = shallowRef(null);
@@ -65,7 +66,7 @@ const currentLine = computed(() => {
 async function openFile(f) {
   error.value = '';
   try {
-    doc.value = toDoc(new Uint8Array(await f.arrayBuffer()));
+    doc.value = toDoc(new Uint8Array(await f.arrayBuffer()), syntaxView.value);
     fileName.value = f.name;
     selScript.value = 0; selSprite.value = 0; selectedVm.value = null;
     await nextTick();
@@ -77,7 +78,7 @@ function rebuild() {
   if (!doc.value) return;
   stop();
   try {
-    const { bytes, errors: errs, sourceLines: sl } = docToBytes(doc.value);
+    const { bytes, errors: errs, sourceLines: sl } = docToBytes(doc.value, syntaxView.value);
     buildErrors.value = errs;
     sourceLines.value = sl;
     file.value = flattenFile(bytes, parseAnm(bytes));
@@ -110,8 +111,17 @@ function loop(t) {
 function play() { if (!player.value) return; playing.value = true; last = 0; acc = 0; raf = requestAnimationFrame(loop); }
 function stop() { playing.value = false; if (raf) cancelAnimationFrame(raf); raf = 0; }
 function onInterrupt(l) { if (!selectedVm.value) return; triggerInterrupt(selectedVm.value, l); stepOnce(); }
+function onSwitchView(to) {
+  if (to === syntaxView.value || !doc.value) return;
+  const r = switchView(doc.value, syntaxView.value, to);
+  if (!r.ok) { buildErrors.value = r.errors; error.value = '还有汇编错误，修掉才能换视图（否则会丢掉写坏的那几行）'; return; }
+  syntaxView.value = to;
+  buildErrors.value = [];
+  error.value = '';
+  rebuild();
+}
 function exportAnm() {
-  const { bytes, errors: errs } = docToBytes(doc.value);
+  const { bytes, errors: errs } = docToBytes(doc.value, syntaxView.value);
   buildErrors.value = errs;
   if (errs.length) { error.value = `还有 ${errs.length} 处汇编错误，先修掉再导出`; return; }
   download(bytes, fileName.value || 'edited.anm');
@@ -160,7 +170,7 @@ watch(view, (v) => player.value?.resize(v.w, v.h), { deep: true });
           <button :class="{ on: tab === 'sprite' }" @click="tab = 'sprite'">Sprite</button>
         </div>
         <ScriptList v-if="tab === 'script'" v-model="selScript" :scripts="scripts" :entries="doc.entries"
-                    @add="addScript(doc, cur?.entryIndex ?? 0); rebuild()" />
+                    @add="addScript(doc, cur?.entryIndex ?? 0, syntaxView); rebuild()" />
         <SpriteList v-else v-model="selSprite" :sprites="sprites"
                     @add="addSprite(doc, cur?.entryIndex ?? 0)" @change="() => {}" />
       </section>
@@ -168,14 +178,15 @@ watch(view, (v) => player.value?.resize(v.w, v.h), { deep: true });
       <!-- 中：VM 状态 + 代码（主导区） -->
       <section class="col center">
         <VmState :vm="selectedVm" :frame="frame" :case-labels="caseLabels" @interrupt="onInterrupt" />
-        <CodePane v-model:text="editorText" :disabled="!cur" :current-line="currentLine"
+        <CodePane v-model:text="editorText" :disabled="!cur" :current-line="currentLine" :view="syntaxView"
+                  @switch-view="onSwitchView"
                   :title="cur ? `script #${selScript} · ${cur.entryName}` : '（未选中）'"
                   @apply="rebuild" />
       </section>
 
       <!-- 右：预览 + VM 列表 -->
       <section class="col side">
-        <Stage v-model:view="view" v-model:spawnAt="spawnAt" v-model:speed="speed" v-model:canvasEl="canvasEl"
+        <Stage v-model:view="syntaxView" v-model:spawnAt="spawnAt" v-model:speed="speed" v-model:canvasEl="canvasEl"
                :playing="playing" :frame="frame" :vm-count="vms.length" :skipped="skipped" :errors="errors"
                @spawn="spawn" @toggle="playing ? stop() : play()" @step="stepOnce" @reset="rebuild"
                @center="spawnAt = { x: Math.round(view.w / 2), y: Math.round(view.h / 2) }" />

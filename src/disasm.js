@@ -14,14 +14,14 @@ const asFloat = (raw) => { u32[0] = raw >>> 0; return f32[0]; };
 
 // 参数怎么显示：**类型来自签名表**（signatures.js），不再「两种解释都印出来」。
 // 那个折中是签名表还没做出来时的权宜；现在 135 条的类型是确定的，印错的解释只会误导。
-function formatArg(raw, isVar, kind) {
+function formatArg(raw, isVar, role) {
   if (isVar) {
     // 03-math-jumps.md §3 ④：浮点指令把变量号编成 float32 位模式，整型指令写十进制
-    const id = kind === 'f' ? Math.trunc(asFloat(raw)) : raw | 0;
+    const id = role === 'f' ? Math.trunc(asFloat(raw)) : raw | 0;
     const alias = VAR_ALIASES[id];
     return `$${alias ?? id}`;
   }
-  if (kind === 'f') {
+  if (role === 'f') {
     const v = asFloat(raw);
     return Object.is(fbits(Number(v.toFixed(6))), raw >>> 0) ? String(Number(v.toFixed(6))) : String(v);
   }
@@ -43,7 +43,7 @@ export function disassemble(script) {
   script.instructions.forEach((ins, index) => {
     offsetToLine.set(offset, index);
     const sig = signatureOf(ins.opcode);
-    const args = ins.args.map((a, k) => formatArg(a, ((ins.paramMask >>> k) & 1) === 1, sig ? sig[k] : 'i'));
+    const args = ins.args.map((a, k) => formatArg(a, ((ins.paramMask >>> k) & 1) === 1, sig ? sig[k] : 'S'));
     // 02 §5：`5 case` 的 arg0 是 interrupt 标签号，扫描时当跳转目标用（运行时是 no-op）
     if (ins.opcode === 5 && ins.args.length) caseLabels.push(ins.args[0] | 0);
     lines.push({
