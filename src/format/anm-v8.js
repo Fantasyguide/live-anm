@@ -77,10 +77,16 @@ function parseEntry(view, bytes, base) {
   const height = view.getUint16(base + 0x0c, true);
   const format = view.getUint16(base + 0x0e, true);
   const nameOffset = view.getUint32(base + 0x10, true);
-  // +0x14/+0x16 x_offset/y_offset、+0x18 memory_priority：不影响格式层输出字段，跳过。
+  // ★ 这三个字段游戏加载路径确实不读，但**编辑器要无损重建就必须带上**——
+  // 实测取值非零（01 §10：x_offset ∈ [0,1024]、y_offset ∈ [0,448]），扔掉就等于
+  // 把用户的文件改了。格式层「不解释」不等于「不透出」，同 param_mask 的道理。
+  const xOffset = view.getUint16(base + 0x14, true);
+  const yOffset = view.getUint16(base + 0x16, true);
+  const memoryPriority = view.getUint32(base + 0x18, true);
   const thtxOffset = view.getUint32(base + 0x1c, true);
   const hasData = view.getUint16(base + 0x20, true);
-  // +0x22 low_res_scale、+0x23 保留、+0x28..0x40 保留：同上，跳过。
+  const lowResScale = view.getUint8(base + 0x22);
+  // +0x23 保留、+0x28..0x40 保留：01 §10 实测 423/423 全零，重建时补零即可。
   const nextOffset = view.getUint32(base + 0x24, true);
 
   const name = readCString(bytes, base + nameOffset);
@@ -114,9 +120,23 @@ function parseEntry(view, bytes, base) {
       // decodeThtx() 读的是 THTX 里那个，不看这里。
       sprites,
       scripts,
+      hasTexture: hasData !== 0,
       thtxOffset: hasData !== 0 ? base + thtxOffset : null,
+      // 整块 THTX（含 16 字节头）的**原始字节**——编辑器重建时原样写回去，
+      // 不重新编码（重编会把 format 3/5/7 变成 1，等于替用户改文件）。
+      thtxRaw: hasData !== 0 ? bytes.subarray(base + thtxOffset, base + thtxOffset + thtxByteLength(view, base + thtxOffset)) : null,
+      // 无损重建要用的那几个字段（加载器不读，但它们是文件的一部分）
+      xOffset,
+      yOffset,
+      memoryPriority,
+      lowResScale,
     },
   };
+}
+
+// THTX 整块长度 = 16 字节头 + size 字段（01 §6：size 实测恒 = w*h*bpp）
+function thtxByteLength(view, at) {
+  return 0x10 + view.getUint32(at + 0x0c, true);
 }
 
 function parseSprites(view, entryBase, nSprites) {

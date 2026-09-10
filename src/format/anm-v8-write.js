@@ -17,15 +17,33 @@ const THTX_HEADER_SIZE = 0x10;
 const align4 = (n) => (n + 3) & ~3;
 
 /**
- * @param {{
- *   name?: string, width?: number, height?: number,
- *   sprites: Array<{x:number,y:number,w:number,h:number}>,
- *   scripts: Array<{id?:number, instructions: Array<{time?:number,opcode:number,paramMask?:number,args?:number[]}>}>,
- *   rgba?: Uint8Array,     // width*height*4，RGBA 字节序；不给就是全白不透明
- * }} spec
- * @returns {Uint8Array}
+ * 多 entry 版：`buildAnm({ entries: [...] })`。
+ *
+ * 真实文件普遍是多 entry（54 个文件 / 423 个 entry），单 entry 版编辑不了它们。
+ *
+ * **贴图原样透传**：`entry.thtxRaw`（含 16 字节头的整块）如果给了就直接写回去，
+ * **不重新编码**——重编会把 format 3/5/7 的贴图变成 1（精度还变了），等于替用户
+ * 改文件。只有从零造新 entry 时才走 `rgba` 那条路（编成 format 1）。
+ *
+ * **无损字段**：`xOffset`/`yOffset`/`memoryPriority`/`lowResScale` 游戏加载路径不读，
+ * 但它们是文件的一部分（01 §10 实测非零），不带上就等于悄悄改了用户的文件。
  */
-export function buildAnm(spec) {
+export function buildAnmFile(spec) {
+  const chunks = spec.entries.map((e) => buildEntry(e));
+  const total = chunks.reduce((n, c) => n + align4(c.length), 0);
+  const out = new Uint8Array(total);
+  let at = 0;
+  chunks.forEach((c, i) => {
+    out.set(c, at);
+    const size = align4(c.length);
+    // 01 §2：next_offset 相对**本 entry 起始**，最后一个写 0
+    if (i < chunks.length - 1) new DataView(out.buffer).setUint32(at + 0x24, size, true);
+    at += size;
+  });
+  return out;
+}
+
+function buildEntry(spec) {
   const name = spec.name ?? 'synthetic.png';
   const width = spec.width ?? 8;
   const height = spec.height ?? 8;
@@ -45,8 +63,18 @@ export function buildAnm(spec) {
   let cursor = spriteBase + sprites.length * 20;
   for (const size of scriptSizes) { scriptOffsets.push(cursor); cursor += size; }
   const thtxOffset = cursor;
-  const pixelBytes = width * height * 4; // format 1，bpp = 4
-  const total = thtxOffset + THTX_HEADER_SIZE + pixelBytes;
+  // 贴图：优先原样透传 `thtxRaw`（含 16 字节头），否则从 rgba 编成 format 1。
+  // 透传是**无损编辑的关键**——重编会把 format 3/5/7 变成 1。
+  const rawThtx = spec.thtxRaw ?? null;
+  // 三段规则：
+  //   thtxRaw 有       → 原样透传
+  //   hasTexture 显式给 → 听它的（parseAnm 会从 has_data 透出来，所以重建真实文件时
+  //                       那 6 个本来就没贴图的 entry 不会被凭空造一块空白贴图——
+  //                       第一版就是这么把文件撑大的）
+  //   都没有            → 造一块全白贴图（合成/自测用途）
+  const hasTexture = rawThtx ? true : (spec.hasTexture ?? true);
+  const thtxBytes = rawThtx ? rawThtx.length : THTX_HEADER_SIZE + width * height * 4;
+  const total = hasTexture ? thtxOffset + thtxBytes : thtxOffset;
 
   const buf = new Uint8Array(total);
   const view = new DataView(buf.buffer);
@@ -57,11 +85,15 @@ export function buildAnm(spec) {
   view.setUint16(0x06, scripts.length, true);
   view.setUint16(0x0a, width, true);
   view.setUint16(0x0c, height, true);
-  view.setUint16(0x0e, 1, true);              // format 1 = A8R8G8B8
+  view.setUint16(0x0e, spec.format ?? 1, true);
   view.setUint32(0x10, nameOffset, true);
-  view.setUint32(0x1c, thtxOffset, true);
-  view.setUint16(0x20, 1, true);              // has_data
-  view.setUint32(0x24, 0, true);              // next_offset = 0 ⇒ 链表结束（单 entry）
+  view.setUint16(0x14, spec.xOffset ?? 0, true);
+  view.setUint16(0x16, spec.yOffset ?? 0, true);
+  view.setUint32(0x18, spec.memoryPriority ?? 0, true);
+  view.setUint32(0x1c, hasTexture ? thtxOffset : 0, true);
+  view.setUint16(0x20, hasTexture ? 1 : 0, true);   // has_data
+  view.setUint8(0x22, spec.lowResScale ?? 0);
+  view.setUint32(0x24, 0, true);              // next_offset：多 entry 时由 buildAnmFile 回填
 
   // sprite 偏移表 + script 表
   sprites.forEach((_, i) => view.setUint32(ENTRY_HEADER_SIZE + i * 4, spriteBase + i * 20, true));
@@ -76,7 +108,10 @@ export function buildAnm(spec) {
   // ── sprite 记录（01 §4，20 字节）──────────────────────────────────────────────
   sprites.forEach((sp, i) => {
     const at = spriteBase + i * 20;
-    view.setUint32(at + 0x00, i, true);       // id 实测恒 = 全局序号
+    // ★ id 实测恒 = **跨 entry 的全局序号**（01 §4），不是 entry 内序号。
+    // 第一版写的 `i` 会把第 2 个 entry 的第一个 sprite 从 290 改成 0 —— 加载器确实不读
+    // 这个字段，但那是**改了用户的文件**。给了就原样保留。
+    view.setUint32(at + 0x00, sp.id ?? i, true);
     view.setFloat32(at + 0x04, sp.x, true);
     view.setFloat32(at + 0x08, sp.y, true);
     view.setFloat32(at + 0x0c, sp.w, true);
@@ -100,11 +135,13 @@ export function buildAnm(spec) {
   });
 
   // ── THTX（01 §6）────────────────────────────────────────────────────────────
+  if (!hasTexture) return buf;
+  if (rawThtx) { buf.set(rawThtx, thtxOffset); return buf; }
   buf.set([0x54, 0x48, 0x54, 0x58], thtxOffset); // "THTX"
   view.setInt16(thtxOffset + 0x06, 1, true);     // format 1
   view.setInt16(thtxOffset + 0x08, width, true);
   view.setInt16(thtxOffset + 0x0a, height, true);
-  view.setUint32(thtxOffset + 0x0c, pixelBytes, true);
+  view.setUint32(thtxOffset + 0x0c, width * height * 4, true);
   // format 1 的字节序是 B,G,R,A（小端 A8R8G8B8）——与 thtx.js 的解码互为逆运算
   const px = thtxOffset + THTX_HEADER_SIZE;
   for (let i = 0; i < width * height; i++) {
@@ -118,4 +155,9 @@ export function buildAnm(spec) {
     buf[px + i * 4 + 3] = a;
   }
   return buf;
+}
+
+/** 单 entry 的便利包装（自测页与测试用的就是它）。 */
+export function buildAnm(spec) {
+  return buildAnmFile({ entries: [spec] });
 }

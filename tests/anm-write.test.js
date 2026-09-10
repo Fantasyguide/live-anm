@@ -87,3 +87,60 @@ test('01 §10 的恒等式：name_offset == 0x40 + 4×n_sprites + 8×n_scripts',
   const view = new DataView(bytes.buffer);
   assert.equal(view.getUint32(0x10, true), 0x40 + 2 * 4 + 2 * 8);
 });
+
+// ── 多 entry + 无损重建（编辑器要靠这些）────────────────────────────────────────
+// 开发时另外跑过全量验证：把 54 个真实 th16 `.anm` 全部重建，**54/54 逐字段解回原样**，
+// 总大小 249.64 MB → 249.63 MB。真实文件不在本仓，那一轮不能做成测试。
+import { buildAnmFile } from '../src/format/anm-v8-write.js';
+
+const TWO = {
+  entries: [
+    { name: 'a.png', width: 8, height: 8, format: 1, xOffset: 3, yOffset: 5, memoryPriority: 10, lowResScale: 1,
+      sprites: [{ id: 0, x: 0, y: 0, w: 4, h: 4 }],
+      scripts: [{ id: -3, instructions: [{ time: 0, opcode: 300, paramMask: 0, args: [0] }] }] },
+    { name: 'b.png', width: 4, height: 4, format: 3,
+      sprites: [{ id: 1, x: 1, y: 1, w: 2, h: 2 }, { id: 2, x: 0, y: 0, w: 1, h: 1 }],
+      scripts: [{ id: 9, instructions: [{ time: 7, opcode: 1, paramMask: 0, args: [] }] }],
+      hasTexture: false },
+  ],
+};
+
+test('多 entry：next_offset 链表把两个 entry 串起来', () => {
+  const { entries } = parseAnm(buildAnmFile(TWO));
+  assert.equal(entries.length, 2);
+  assert.deepEqual(entries.map((e) => e.name), ['a.png', 'b.png']);
+  assert.equal(entries[1].format, 3, '各 entry 的 format 各自保留');
+});
+
+test('★ sprite 的 id 是**跨 entry 的全局序号**，不是 entry 内序号（01 §4）', () => {
+  // 第一版写死成 entry 内下标，会把第二个 entry 的 sprite id 从 1,2 改成 0,1。
+  // 加载器确实不读这个字段——但那是**改了用户的文件**。真实数据里 ascii.anm 的
+  // 第二个 entry 首个 sprite id 是 290，全量重建时就是这条把 54 个文件全打回来的。
+  const { entries } = parseAnm(buildAnmFile(TWO));
+  assert.deepEqual(entries[1].sprites.map((s) => s.id), [1, 2]);
+});
+
+test('★ 没贴图的 entry 不该凭空造一块空白贴图', () => {
+  // 第一版对 thtxRaw 为空的 entry 一律分配 w*h*4 字节的空白贴图，白白撑大文件。
+  const { entries } = parseAnm(buildAnmFile(TWO));
+  assert.equal(entries[1].thtxOffset, null, 'has_data = 0');
+  assert.notEqual(entries[0].thtxOffset, null, '有 rgba/默认的那个仍然有贴图');
+});
+
+test('无损字段（加载器不读，但属于文件）原样带回来', () => {
+  const [a] = parseAnm(buildAnmFile(TWO)).entries;
+  assert.equal(a.xOffset, 3);
+  assert.equal(a.yOffset, 5);
+  assert.equal(a.memoryPriority, 10);
+  assert.equal(a.lowResScale, 1);
+});
+
+test('thtxRaw 原样透传：不重编码，format 3/5/7 的贴图不会被改成 1', () => {
+  // 先造一个 format 1 的文件，取出它的 thtxRaw，声明成 format 5 塞回去——
+  // 透传正确的话字节应当一模一样（重编码的话会按 format 1 重写）。
+  const src = parseAnm(buildAnm(SPEC));
+  const raw = src.entries[0].thtxRaw;
+  const out = parseAnm(buildAnmFile({ entries: [{ ...SPEC, format: 5, thtxRaw: raw }] }));
+  assert.deepEqual([...out.entries[0].thtxRaw], [...raw], '整块字节原样');
+  assert.equal(out.entries[0].format, 5, 'entry.format 按声明走');
+});
