@@ -44,6 +44,12 @@ npm test          # 304 个测试，零依赖，只要有 node
 python3 -m http.server 8080          # 然后打开 http://localhost:8080/web/
 ```
 
+**浏览器自测**：`/web/selftest.html` 会用仓库自带的合成夹具跑一遍完整管线
+（解析 → 贴图 → VM → 几何 → WebGL → `readPixels` 读回像素），确认真实 WebGL 路径通。
+Node 里那 312 个测试用的是 mock GL，**真实 GL 的行为只有浏览器能验** ——
+开发机上没有可用的 GL（headless 无上下文、VNC 里软件合成失败），所以这一条
+**尚未在真浏览器上验证过**，请以 selftest 页面的结果为准。
+
 ## 保真度
 
 目标是「**能跑、看着像**」而不是逐像素等同真机。每条实现都对着 TH16 v1.00a

@@ -1,0 +1,28 @@
+<!doctype html><meta charset="utf-8"><title>selftest</title>
+<canvas id="c"></canvas><pre id="out"></pre>
+<script type="module">
+const log = [];
+const say = (ok, msg) => { log.push((ok ? 'PASS ' : 'FAIL ') + msg); };
+try {
+  const { loadAnm, createPlayer } = await import('/web/player.js');
+  const bytes = new Uint8Array(await (await fetch('/tests/fixtures/settings-ops.anm')).arrayBuffer());
+  const file = loadAnm(bytes);
+  say(file.entries.length > 0, `解析 ${file.entries.length} entry / ${file.sprites.length} sprite / ${file.scripts.length} script`);
+  say(!!file.textures[0]?.rgba, `贴图解码 ${file.textures[0]?.width}x${file.textures[0]?.height} format=${file.textures[0]?.format}`);
+  const p = createPlayer(document.getElementById('c'), file, { width: 320, height: 240 });
+  say(true, 'WebGL 上下文 + shader 编译链接通过');
+  p.spawn(0, { entityPos: { x: 160, y: 120, z: 0 } });
+  for (let i = 0; i < 5; i++) { p.step(); }
+  p.render();
+  say(p.errors.length === 0, `跑 5 帧，运行时异常 ${p.errors.length} 个` + (p.errors[0] ? ': ' + p.errors[0].message.slice(0,120) : ''));
+  const drawn = p.manager.drawList().length;
+  say(true, `drawList ${drawn} 项 · skipped ${p.manager.skipped.length} 项`);
+  // 真读回像素，确认「确实画上去了」而不是只跑通了调用
+  const gl = document.getElementById('c').getContext('webgl2') || document.getElementById('c').getContext('webgl');
+  const px = new Uint8Array(320*240*4); gl.readPixels(0,0,320,240,gl.RGBA,gl.UNSIGNED_BYTE,px);
+  let nonblack = 0; for (let i=0;i<px.length;i+=4) if (px[i]||px[i+1]||px[i+2]) nonblack++;
+  say(nonblack > 0, `readPixels 非黑像素 ${nonblack} 个`);
+} catch (e) { say(false, '异常: ' + (e && e.stack ? e.stack.split('\n').slice(0,3).join(' | ') : e)); }
+document.getElementById('out').textContent = log.join('\n');
+await fetch('/__result', { method: 'POST', body: JSON.stringify(log) });
+</script>

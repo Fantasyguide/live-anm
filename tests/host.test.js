@@ -4,6 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createManager, createOps, flattenFile } from '../src/host/manager.js';
 import { ensureChildState } from '../src/vm/group-child.js';
+import { triggerInterrupt } from '../src/vm/core.js';
+import { disassemble, lineOfPc } from '../src/disasm.js';
 
 const ins = (opcode, args = [], { time = 0, paramMask = 0 } = {}) => ({ time, opcode, paramMask, args });
 const f32b = (n) => { const a = new Float32Array([n]); return new Uint32Array(a.buffer)[0]; };
@@ -225,4 +227,53 @@ test('entityPos 与脚本自己的 pos 相加，不是互相覆盖', () => {
   m.step();
   const [d] = m.drawList();
   assert.deepEqual([d.geometry.vertices[0].x, d.geometry.vertices[0].y], [106, 212], '(100+10-4, 200+20-8)');
+});
+
+// ── 反汇编 + interrupt 标签（给 viewer 用） ──────────────────────────────────────
+test('disassemble：行号 ↔ 字节偏移的映射与 01 §5.1 的 8 + 4×参数个数 一致', () => {
+  const script = { instructions: [ins(300, [1]), ins(400, [0, 0, 0]), ins(0, [])] };
+  const d = disassemble(script);
+  assert.deepEqual(d.lines.map((l) => l.offset), [0, 12, 32], '8+4 / 8+12 累加');
+  assert.equal(lineOfPc(d, 12), 1);
+  assert.equal(lineOfPc(d, 13), -1, '不在指令边界上就是 -1，不瞎猜');
+  assert.equal(lineOfPc(d, -1), -1, '脚本终止');
+});
+
+test('disassemble：opcode 名字来自 OVERVIEW 矩阵，未知号退化成 ins_<n>', () => {
+  const d = disassemble({ instructions: [ins(300, [0]), ins(613, [0, 0]), ins(998, [])] });
+  assert.deepEqual(d.lines.map((l) => l.name), ['sprite', 'drawLine', 'ins_998']);
+  assert.equal(d.lines[0].group, 'Settings');
+});
+
+test('disassemble：param_mask 置位的参数显示成 $变量号（两种编码都认）', () => {
+  const d = disassemble({
+    instructions: [
+      ins(300, [10000], { paramMask: 0x1 }),          // 整型侧：十进制变量号
+      ins(400, [f32b(10004), 0, 0], { paramMask: 0x1 }), // 浮点侧：float32 位模式（03 §3 ④）
+    ],
+  });
+  assert.equal(d.lines[0].args[0], '$10000');
+  assert.equal(d.lines[1].args[0], '$10004');
+});
+
+test('disassemble：收集 5 case 的标签（02 §5 的 interrupt 目标）', () => {
+  const d = disassemble({ instructions: [ins(5, [3]), ins(0, []), ins(5, [1]), ins(5, [3])] });
+  assert.deepEqual(d.caseLabels, [1, 3], '去重并排序');
+});
+
+test('triggerInterrupt：喊一声之后，下一帧从对应的 case 标签继续', () => {
+  // 02 §5：interrupt 在取指前处理——保存现场、跳到 `5 case n` 的下一条。
+  const file = mkFile([{
+    instructions: [
+      ins(300, [0]), ins(6, [9999]),        // 主线：选 sprite 然后长 wait
+      ins(5, [7]), ins(400, [f32b(50), f32b(60), f32b(0)]), ins(0, [], { time: 99 }),
+    ],
+  }]);
+  const m = createManager(file);
+  const vm = m.spawn(0);
+  m.step();
+  assert.deepEqual([vm.pos.x, vm.pos.y], [0, 0], '还卡在 wait 上');
+  triggerInterrupt(vm, 7);
+  m.step();
+  assert.deepEqual([vm.pos.x, vm.pos.y], [50, 60], 'interrupt 7 把执行流带到了 case 7 之后');
 });

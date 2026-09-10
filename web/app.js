@@ -1,5 +1,7 @@
 import { createApp, ref, computed, shallowRef, onMounted, watch, nextTick } from 'vue';
 import { loadAnm, createPlayer, inspect } from './player.js';
+import { disassemble, lineOfPc } from '../src/disasm.js';
+import { triggerInterrupt } from '../src/vm/core.js';
 
 const App = {
   setup() {
@@ -37,6 +39,25 @@ const App = {
     const skipped = computed(() => { frame.value; return player.value?.manager.skipped ?? []; });
     const errors = computed(() => { frame.value; return player.value?.errors ?? []; });
     const detail = computed(() => (selectedVm.value ? inspect(selectedVm.value) : null));
+
+    // 反汇编：优先看选中的 VM 正在跑的脚本（子 VM 也认），没选就看列表里选中的 script。
+    const disasm = computed(() => {
+      const src = selectedVm.value
+        ? { instructions: selectedVm.value._instructions }
+        : file.value?.scripts[selectedScript.value]?.script;
+      return src ? disassemble(src) : null;
+    });
+    // 当前执行到哪一行。frame.value 是为了让它跟着帧走重算。
+    const curLine = computed(() => {
+      frame.value;
+      return selectedVm.value && disasm.value ? lineOfPc(disasm.value, selectedVm.value.pc) : -1;
+    });
+    function fire(label) {
+      if (!selectedVm.value) return;
+      // 02 §5：interrupt 在**取指前**处理，所以喊完要推一帧才看得到效果。
+      triggerInterrupt(selectedVm.value, label);
+      stepOnce();
+    }
 
     async function openFile(f) {
       error.value = '';
@@ -109,7 +130,7 @@ const App = {
       file, fileName, error, dragging, canvasEl, playing, frame, speed,
       selectedScript, selectedVm, scriptFilter, viewW, viewH, spawnX, spawnY,
       center: () => { spawnX.value = Math.round(viewW.value / 2); spawnY.value = Math.round(viewH.value / 2); },
-      entries, scripts, vms, skipped, errors, detail,
+      entries, scripts, vms, skipped, errors, detail, disasm, curLine, fire,
       openFile, spawn, stepOnce, play, stop, reset, onDrop, inspect,
       onPick: (e) => e.target.files[0] && openFile(e.target.files[0]),
       pickVm: (vm) => { selectedVm.value = vm; },
@@ -199,8 +220,36 @@ const App = {
             <tr v-for="(v, k) in detail" :key="k"><td>{{ k }}</td><td>{{ Array.isArray(v) ? v.join(', ') : v }}</td></tr>
           </table>
         </div>
+
+        <div v-if="disasm && disasm.caseLabels.length" class="detail">
+          <h3>Interrupt <small>{{ disasm.caseLabels.length }} 个 case 标签</small></h3>
+          <p class="dim tiny">脚本里的 <code>5 case n</code> 就是中断入口。真机由管理器
+            <code>interrupt_tree</code> 喊；这里点一下就是给选中的 VM 投一个。</p>
+          <div class="bar">
+            <button v-for="l in disasm.caseLabels" :key="l" @click="fire(l)" :disabled="!selectedVm"
+                    :title="'triggerInterrupt(vm, ' + l + ')'">
+              {{ l === -1 ? 'default (-1)' : l }}
+            </button>
+          </div>
+        </div>
       </section>
     </div>
+
+    <section v-if="file && disasm" class="disasm">
+      <h2>反汇编
+        <small v-if="selectedVm">跟随选中的 VM · pc = {{ selectedVm.pc }}</small>
+        <small v-else>script #{{ selectedScript }}（选一个 VM 可跟随执行）</small>
+      </h2>
+      <ol class="code">
+        <li v-for="l in disasm.lines" :key="l.index"
+            :class="{ cur: l.index === curLine, iscase: l.isCase }">
+          <span class="off">{{ l.offset }}</span>
+          <span class="t">{{ l.time }}</span>
+          <span class="op" :data-g="l.group">{{ l.name }}</span><span class="a">({{ l.args.join(', ') }})</span>
+          <span v-if="l.isCase" class="tag">中断入口</span>
+        </li>
+      </ol>
+    </section>
 
     <footer>
       本站不含任何游戏数据 · 代码 MIT · ANM 格式与东方 Project 的一切权利归上海爱丽丝幻乐团 / ZUN 所有
