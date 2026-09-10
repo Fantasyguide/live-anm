@@ -254,8 +254,11 @@ test('disassemble：param_mask 置位的参数显示成 $变量号（两种编�
       ins(400, [f32b(10004), 0, 0], { paramMask: 0x1 }), // 浮点侧：float32 位模式（03 §3 ④）
     ],
   });
-  assert.equal(d.lines[0].args[0], '$10000');
-  assert.equal(d.lines[1].args[0], '$10004');
+  // 有别名就用别名（04 §2 的 I0–I3 / F0–F3）——与 asm.js 的输出一致，能被汇编器读回去
+  assert.equal(d.lines[0].args[0], '$I0');
+  assert.equal(d.lines[1].args[0], '$F0');
+  // 没别名的号原样显示
+  assert.equal(disassemble({ instructions: [ins(403, [10022], { paramMask: 1 })] }).lines[0].args[0], '$10022');
 });
 
 test('disassemble：收集 5 case 的标签（02 §5 的 interrupt 目标）', () => {
