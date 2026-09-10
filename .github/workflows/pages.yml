@@ -1,0 +1,45 @@
+# 把仓库原样发到 GitHub Pages。
+#
+# **没有构建步骤**：web/ 是纯静态的（Vue 走 import map 从 CDN 取），而 src/ 本来就是
+# 浏览器能直接 import 的 ESM。所以整个仓库根目录就是站点根 —— web/index.html 里的
+# `../src/...` 在线上和本地都成立。根目录的 index.html 只是跳转到 ./web/。
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      # 零依赖，不需要 npm install
+      - run: npm test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+      - id: deployment
+        uses: actions/deploy-pages@v4

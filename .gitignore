@@ -1,0 +1,5 @@
+node_modules/
+.DS_Store
+# 夹具的 .anm 编译产物**是入库的**（见 tests/fixtures/README.md）——本仓库没有 thanm，
+# 靠它们才能在只装了 node 的机器上跑测试。只忽略中间用的 PNG。
+tests/fixtures/*.png

@@ -8,8 +8,15 @@
 #   2. `-c`/`-l` 都要求显式 VERSION 位置参数（`thanm -c VERSION ARCHIVE SPEC`），
 #      brief 里 `thanm -c "${f%.txt}" "$f"` 漏了这个参数——本仓固定用 8（v8）。
 set -euo pipefail
-ROOT="$(git rev-parse --show-toplevel)"
-THANM="$(command -v thanm || echo "$ROOT/local/vendor/thtk/build/thanm/thanm")"
+# ★ 拆仓之后：thanm 不是本仓库的依赖（它在上游的逆向工作台里），所以这里只认
+# 环境变量 THANM 或 PATH 上的 thanm。编译产物已经提交进库了（见 fixtures/README.md），
+# 平时跑测试不需要执行本脚本。
+THANM="${THANM:-$(command -v thanm || true)}"
+if [ -z "$THANM" ]; then
+  echo "找不到 thanm：请装 thtk 或用 THANM=/path/to/thanm 指定。" >&2
+  echo "（注意：夹具的编译产物已入库，跑 npm test 不需要本脚本。）" >&2
+  exit 1
+fi
 FIXDIR="$(dirname "$0")/fixtures"
 cd "$FIXDIR"
 

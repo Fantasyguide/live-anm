@@ -14,10 +14,22 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { parseAnm } from '../src/format/anm-v8.js';
 
-const THANM = process.env.THANM ?? '../../local/vendor/thtk/build/thanm/thanm';
+// ★ 拆仓之后：thanm 不是本仓库的依赖（它在上游的逆向工作台里）。这条差分测试**有 thanm
+// 就跑、没有就跳过**——删掉它会丢掉「我们的解析器与 thanm 一致」这个交叉验证，而让
+// 每个人先装一套 thtk 才能 `npm test` 又太重。装了的人用 `THANM=/path/to/thanm npm test`。
+// 其余测试不依赖 thanm：夹具的编译产物已入库（tests/fixtures/README.md）。
+const THANM = process.env.THANM ?? which('thanm');
 const FIX = new URL('./fixtures/minimal.anm', import.meta.url);
 
-test('entry / sprite / script 计数与 thanm -l 一致', () => {
+function which(bin) {
+  try {
+    return execFileSync(process.platform === 'win32' ? 'where' : 'which', [bin], { encoding: 'utf8' }).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+test('entry / sprite / script 计数与 thanm -l 一致', { skip: THANM ? false : '没找到 thanm（装了的话用 THANM=... 跑）' }, () => {
   const parsed = parseAnm(readFileSync(FIX));
   const dump = execFileSync(THANM, ['-l', '8', FIX.pathname], { encoding: 'utf8' });
   const nEntry = (dump.match(/^entry\b/gm) ?? []).length;

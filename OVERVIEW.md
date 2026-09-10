@@ -4,11 +4,11 @@
 > 引用其他版本须写成 `th18:0x…`。实现以 th16 主攻、th18 补差（见设计文档 D5）。
 >
 > **层次**：本文档是 `runtime/` 层，追踪**实现进度**，不是引擎结论。引擎语义的断言 ×
-> 版本矩阵在 [`engine/anm/OVERVIEW.md`](../../engine/anm/OVERVIEW.md)；本文任何一行「实现」
+> 版本矩阵在 `engine/anm/OVERVIEW.md`；本文任何一行「实现」
 > 都必须能指回那边的一条断言，指不回去就在代码里标 🟡（见 [`../README.md`](../README.md) 的
 > 双向互指纪律）。
 
-这是一个 ANM v8（TH13+，参见 [`engine/anm/OVERVIEW.md`](../../engine/anm/OVERVIEW.md)）
+这是一个 ANM v8（TH13+，参见 `engine/anm/OVERVIEW.md`）
 精灵动画播放器，用「行为对不对得上 th16」反向证伪 `engine/anm/` 的断言。当前处于
 **阶段 1：地基**——格式层（I1）、VM 骨架（I2）已实现；opcode 语义 **135 / 135 条全部已实现**：
 Math + Jumps 46（I3）· System 8（I4）· Settings 18（I5）· General 39（I6）· Child management 10（I7）·
@@ -16,14 +16,14 @@ Drawing 14（I8）。**层 A（纯状态机）到此收口**——设计文档 �
 剩下的是层 B：帧尾几何填充（`th16:0x4632f0`）+ `draw_vm`（`th16:0x468490`）的 WebGL 后端。
 
 > **「135 条全实现」不等于「画面对得上」**：Drawing 组 14 条自身不发 draw call，只置渲染模式 +
-> 写 `sprite_size`/`I0`/顶点缓冲（[`09-drawing.md`](../../engine/anm/th16/09-drawing.md) §0）。
+> 写 `sprite_size`/`I0`/顶点缓冲（`09-drawing.md` §0）。
 > 真正把这些状态变成像素的是层 B，尚未开始。另外 09 §6 证实 `601`/`607`/`609`/`610`/`611`/`613`
 > 这 6 条 ZUN 自家 54 个 `.anm` 一次都没用过——语义 ✅，但**没有 ground truth 可对画面**。
 
 ## 格式层：已实现
 
 `src/format/anm-v8.js` 的 `parseAnm(bytes: Uint8Array)` 按
-[`engine/anm/th16/01-format.md`](../../engine/anm/th16/01-format.md) §2–§6 的字段表解析
+`engine/anm/th16/01-format.md` §2–§6 的字段表解析
 entry 链表 / sprite 表 / script 表 / 指令流，只做结构解析，不含任何 opcode 语义
 （VM 语义仍是下面矩阵的事）。
 
@@ -105,8 +105,8 @@ model 空间没给矩阵（`th16:0x467d00` 的 WORLD 矩阵还没逆）。
 ## 层 B · 几何生成：已实现（B3）
 
 `src/render/geometry.js` —— 「vm 状态 → 顶点数组」的**纯计算**，不碰 WebGL，纯 Node 可测。
-覆盖 **render mode 0/1/2/3**（sprite 四边形，[`10-sprite-geometry.md`](../../engine/anm/th16/10-sprite-geometry.md)）
-与 **9 / 13 / 14 / 24 / 25**（帧尾几何三族，[`09-drawing.md`](../../engine/anm/th16/09-drawing.md) §3.2–§3.5）。
+覆盖 **render mode 0/1/2/3**（sprite 四边形，`10-sprite-geometry.md`）
+与 **9 / 13 / 14 / 24 / 25**（帧尾几何三族，`09-drawing.md` §3.2–§3.5）。
 未覆盖的 mode **显式抛**：4/8/15 走 `th16:0x467410`、rect 族走 `th16:0x468722`、
 poly 族走 `th16:0x4689b3`，这三条路径还没逆（计划里的 B6）。
 
@@ -127,7 +127,7 @@ poly 族走 `th16:0x4689b3`，这三条路径还没逆（计划里的 B6）。
 ## VM 骨架：已实现
 
 `src/vm/core.js` 实现取指 / 时间推进 / 跳转 / interrupt / 生死，依据
-[`engine/anm/th16/02-vm-core.md`](../../engine/anm/th16/02-vm-core.md) §2 的 `AnmVm_run`
+`engine/anm/th16/02-vm-core.md` §2 的 `AnmVm_run`
 伪代码（逐段注释指回对应小节）。**不含任何具体 opcode 语义**——100+/200+/300+/400+/500+/600+
 全部通过 `registerGroup(ops, groupTable)` 注入的 `ops` 表间接调用，`core.js` 本身只认
 `-1/0/1/2/3/4/5/6/7` 这几个数字（生死/时间控制的骨架特例）。
@@ -137,7 +137,7 @@ poly 族走 `th16:0x4689b3`，这三条路径还没逆（计划里的 B6）。
   （配套小工具 `isVarBit(paramMask, index)`）、`triggerInterrupt(vm, n) -> void`、
   handler 用来声明「我已经自己改过 pc」的哨兵 `PC_HANDLED`。
 - **变量表**：`resolveArg`（读）+ `writeIntVar`/`writeFloatVar`（写）覆盖
-  [`engine/anm/th16/04-variables.md`](../../engine/anm/th16/04-variables.md)（下称「04」）
+  `engine/anm/th16/04-variables.md`（下称「04」）
   §2 的全 **36 个变量号**（10000–10035），22 个可写（7 整型 + 15 浮点，04 §3 穷举）/
   14 个只读，逐号落在真实 `vm` 字段（`vm.i`/`vm.f`/`vm.pos`/`vm.rotation`/`vm.i4`/`vm.i5`/
   `vm.randParamOne`/`vm.randParamPi`/`vm.randParamInt`/`vm.mysteryVars`），不是各存一份影子
@@ -182,7 +182,7 @@ poly 族走 `th16:0x4689b3`，这三条路径还没逆（计划里的 B6）。
 ## Math + Jumps 组（opcode 100–199 / 200–299，46 条）：已实现
 
 `src/vm/group-math.js` 导出 `mathJumpsGroup`（`{ [opcode]: handler }`，供 `registerGroup`
-并入总 `ops` 表），依据 [`engine/anm/th16/03-math-jumps.md`](../../engine/anm/th16/03-math-jumps.md)
+并入总 `ops` 表），依据 `engine/anm/th16/03-math-jumps.md`
 §2 的 46 条指令表，每条 handler 上方注释指回具体 opcode 行。32 条算术/数学（100–131）
 读写变量槽（消费 `core.js` 的 `resolveArg` 做右值读、`writeIntVar`/`writeFloatVar` 做左值写——
 两者都覆盖上面「变量表」小节说的全 36 个变量号，不再本地维护一份镜像），14 条跳转
@@ -428,7 +428,7 @@ runtime/anm/
 ## 下一步
 
 层 A 已收口（135/135）。下一步是**层 B：渲染后端**——两块，边界在
-[`09-drawing.md`](../../engine/anm/th16/09-drawing.md) §0 划得很清楚：
+`09-drawing.md` §0 划得很清楚：
 
 1. **帧尾几何填充**（`th16:0x4632f0`）：按渲染模式把顶点写进 `vm.vertexBuffer`。
    ★ **2026-09-10：三族的几何公式已全部一手解完并升 ✅**（09 §3.1–§3.5）——mode 9 整圆环、

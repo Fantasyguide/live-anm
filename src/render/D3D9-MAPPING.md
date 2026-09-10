@@ -4,7 +4,7 @@
 > 引用其他版本须写成 `th18:0x…`。
 >
 > **层次**：本文属 `runtime/` 层，是**实现侧的对照表**，不是引擎结论。每一行都指回
-> [`engine/anm/th16/09-drawing.md`](../../../../engine/anm/th16/09-drawing.md)（下称「09」）§4 的一手扫描；
+> `engine/anm/th16/09-drawing.md`（下称「09」）§4 的一手扫描；
 > 指不回去的行会显式标出来。代码在 `render-state.js`（纯映射）与 `webgl.js`（喂给 GL）。
 
 ## 1. 全局重置（09 §4.1，`th16:0x45ba80`）
@@ -133,6 +133,6 @@ vec4 c = texture2D(uTex, vUv) * vColor;   // 整条 texture stage 就是这一�
 
 ## 关联
 
-- 一手扫描：[`engine/anm/th16/09-drawing.md`](../../../../engine/anm/th16/09-drawing.md) §4
-- 顶点怎么算出来的：[`geometry.js`](geometry.js)、[`10-sprite-geometry.md`](../../../../engine/anm/th16/10-sprite-geometry.md)
-- 层 B 的任务分解：[`docs/superpowers/plans/2026-09-10-runtime-anm-layerb.md`](../../../../docs/superpowers/plans/2026-09-10-runtime-anm-layerb.md)
+- 一手扫描：`engine/anm/th16/09-drawing.md` §4
+- 顶点怎么算出来的：[`geometry.js`](geometry.js)、`10-sprite-geometry.md`
+- 层 B 的任务分解：`docs/superpowers/plans/2026-09-10-runtime-anm-layerb.md`
