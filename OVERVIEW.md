@@ -69,21 +69,26 @@ entry 链表 / sprite 表 / script 表 / 指令流，只做结构解析，不含
 因此比真机**更准**。真实数据里两个 format 不同的只有 1 个 entry（`enemy.anm` 的
 `enemy/enemy_aura.png`：源 1、目标 6）。
 
-## ⚠️ 真实 WebGL 路径尚未在浏览器上验证
+## 真实 WebGL 路径：浏览器侧的验证状态
 
-Node 里的 312 个测试全部用 **mock GL**（记录调用序列并逐条断言）——那能验「设了哪些状态、
-顶点怎么摆」，**验不了真实 GL 的行为**（shader 是否真能编译、混合结果对不对、
-readPixels 读回来是不是想要的像素）。
+Node 里的 320 个测试全部用 **mock GL**（记录调用序列并逐条断言）——那能验「设了哪些状态、
+顶点怎么摆」，**验不了真实 GL 的行为**（shader 能不能编译、混合结果对不对、
+`readPixels` 读回来是不是想要的像素）。
 
-开发机上没有可用的 GL：headless Firefox 取不到 WebGL 上下文，VNC 里的软件合成报
-`RenderCompositorSWGL failed mapping default framebuffer`。所以这条路径**目前只在纸面上成立**。
+**已在真浏览器里确认**（2026-09-10）：`.anm` 解析 ✓ · THTX 解码 ✓ ·
+**WebGL 上下文 + shader 编译链接 ✓** · 跑 5 帧运行时异常 0 个 ✓ ·
+把真实 `.anm` 拖进页面能出画面 ✓。
 
-**已经在真浏览器里验过的**：`.anm` 解析 ✓、THTX 解码 ✓（8×8 format=1）。
+**第一版自测页给了假阴性**：它挑 `settings-ops.anm` 当夹具，而那个文件只有 1 个 sprite
+却执行 `300 sprite(3)` —— 越界，宿主记进 `skipped` 不画，`readPixels` 自然全黑，
+看着像「管线断了」。**而且那一行 `drawList N 项` 当时写成了恒真的 `say(true, …)`**，
+把「drawList 0 项」显示成了通过——是同一类假验证。
 
-⇒ 打开 `web/selftest.html` 可以一键跑完整管线并读回像素。在它变绿之前，
-「层 B 能画出东西」这句话请当作**未验证**。
+现在自测页**当场用 `buildAnm` 合成**一个必然画得出东西的文件（32×32 纯品红贴图 +
+16×16 的 sprite），并断言 `readPixels` 读回**正好 256 个品红像素**（= 16×16）——
+数目对得上才说明**几何也对**，不只是「画了点什么」。Node 侧有一条镜像测试盯同一条路。
 
-## 层 B · 最小宿主：已实现（B4）
+## 层 B · 最小宿主：已实现（B4）## 层 B · 最小宿主：已实现（B4）
 
 `src/host/manager.js` —— 骨架**故意**没做的那层 AnmManager：VM 列表、layer 排序、
 子 VM 收编与回收、以及「script / sprite 的**全局运行序号** → 哪个 entry 的哪条记录」

@@ -15,9 +15,6 @@ export default defineConfig({
   // GitHub Pages 把站点挂在 /<repo>/ 下，base 不能是默认的 '/'，否则打包出来的资源路径会 404。
   // 本地 dev / preview 不受影响；要换路径用 BASE_PATH= 覆盖。
   base: process.env.BASE_PATH ?? '/live-anm/',
-  // `.anm` 不在 Vite 默认认识的资源类型里，不声明的话 `import x from '...anm?url'`
-  // 不会把文件拷进产物（自测页就会 404）。这些夹具是合成的零版权字节。
-  assetsInclude: ['**/*.anm'],
   build: {
     outDir: here('dist'),
     emptyOutDir: true,

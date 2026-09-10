@@ -52,11 +52,11 @@ npm run preview   # 预览打包产物
 这个项目的卖点之一是「引擎知识的可执行形式」，保留可直接 import 的 ESM 方便别人
 `import('https://fantasyguide.github.io/live-anm/src/vm/core.js')` 拿去用。
 
-**浏览器自测**：`/selftest.html` 用仓库自带的合成夹具跑一遍完整管线
-（解析 → 贴图 → VM → 几何 → WebGL → `readPixels` 读回像素），确认真实 WebGL 路径通。
-Node 里那 312 个测试用的是 mock GL，**真实 GL 的行为只有浏览器能验**——开发机上没有
-可用的 GL（headless 取不到上下文、VNC 里软件合成失败），所以这一条**尚未在真浏览器上
-验证过**，请以自测页的结果为准。
+**浏览器自测**：`/selftest.html` 当场合成一个 `.anm`（不挑现成夹具——第一版挑了个
+只有 1 个 sprite 却 `sprite(3)` 的，越界被跳过、画布全黑，看着像管线断了），跑完整管线
+并断言 `readPixels` 读回**正好 256 个品红像素**，数目对得上才说明几何也对。
+
+Node 里那 320 个测试用的是 mock GL，**真实 GL 的行为只有浏览器能验**。
 
 ## 保真度
 

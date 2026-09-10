@@ -6,6 +6,8 @@ import { createManager, createOps, flattenFile } from '../src/host/manager.js';
 import { ensureChildState } from '../src/vm/group-child.js';
 import { triggerInterrupt } from '../src/vm/core.js';
 import { disassemble, lineOfPc } from '../src/disasm.js';
+import { buildAnm } from '../src/format/anm-v8-write.js';
+import { parseAnm } from '../src/format/anm-v8.js';
 
 const ins = (opcode, args = [], { time = 0, paramMask = 0 } = {}) => ({ time, opcode, paramMask, args });
 const f32b = (n) => { const a = new Float32Array([n]); return new Uint32Array(a.buffer)[0]; };
@@ -276,4 +278,28 @@ test('triggerInterrupt：喊一声之后，下一帧从对应的 case 标签继�
   triggerInterrupt(vm, 7);
   m.step();
   assert.deepEqual([vm.pos.x, vm.pos.y], [50, 60], 'interrupt 7 把执行流带到了 case 7 之后');
+});
+
+test('端到端：buildAnm 合成的文件能一路走到 drawList（自测页用的就是这条路）', () => {
+  // 这条是浏览器自测页在 Node 侧的镜像。第一版自测页挑了 settings-ops.anm 当夹具，
+  // 而那个文件只有 1 个 sprite 却执行 `300 sprite(3)` —— 越界被跳过、画布全黑，
+  // 看着像「管线断了」。合成文件才控制得住。
+  const bytes = buildAnm({
+    name: 'x.png', width: 32, height: 32,
+    sprites: [{ x: 0, y: 0, w: 16, h: 16 }],
+    scripts: [{ instructions: [{ time: 0, opcode: 300, args: [0] }, { time: 999, opcode: 0, args: [] }] }],
+  });
+  const parsed = parseAnm(bytes);
+  const file = flattenFile(bytes, parsed);
+  const m = createManager(file);
+  m.spawn(0, { entityPos: { x: 160, y: 120, z: 0 } });
+  m.step();
+  const list = m.drawList();
+  assert.equal(m.skipped.length, 0, `不该有跳过项：${m.skipped.map((s) => s.reason).join(' / ')}`);
+  assert.equal(list.length, 1);
+  // 16×16 的 sprite、中心锚点、摆在 (160,120) ⇒ 角在 (152,112)–(168,128)
+  const v = list[0].geometry.vertices;
+  assert.deepEqual([v[0].x, v[0].y], [152, 112]);
+  assert.deepEqual([v[3].x, v[3].y], [168, 128]);
+  assert.equal(list[0].texture.width, 32, '贴图跟着 entry 走');
 });
