@@ -121,3 +121,27 @@ code { background:var(--panel); padding:1px 4px; border-radius:3px; }
 .seg button { border:0; border-radius:0; padding:3px 10px; font-size:11px; }
 .seg button.on { background:#243049; color:#fff; }
 .bar label input[type=checkbox] { vertical-align:-1px; margin-right:3px; }
+
+/* ── 语法高亮：文字由高亮层画，textarea 只留光标与选区 ────────────────────── */
+.code-edit.hl-on { color:transparent; caret-color:var(--fg); }
+/* textarea 在高亮层**上面**：选区背景若不透明会盖住下面的彩色文字，所以用半透明 */
+.code-edit.hl-on::selection { background:rgba(122,162,247,.30); color:transparent; }
+/* 文字设成透明会把 placeholder 也一起隐掉，单独补回来 */
+.code-edit.hl-on::placeholder { color:var(--dim); }
+.hl-code { font:12px/21px ui-monospace,SFMono-Regular,Consolas,monospace; white-space:pre; }
+.tk-comment { color:#565f89; font-style:italic; }
+.tk-time    { color:#ff9e64; font-weight:600; }
+.tk-label   { color:#f7768e; font-weight:600; }
+.tk-ref     { color:#c0caf5; border-bottom:1px dotted #4d5566; }
+.tk-var     { color:#e0af68; }
+.tk-num     { color:#ff9e64; }
+.tk-punct   { color:#565f89; }
+.tk-unknown { color:#f7768e; text-decoration:underline wavy #f7768e; }
+.tk-op      { color:var(--acc); }
+.tk-op.g-System   { color:#bb9af7; }
+.tk-op.g-Math     { color:#7dcfff; }
+.tk-op.g-Jumps    { color:#f7768e; }
+.tk-op.g-Settings { color:#7aa2f7; }
+.tk-op.g-General  { color:#73daca; }
+.tk-op.g-Childmanagement { color:#e0af68; }
+.tk-op.g-Drawing  { color:#9ece6a; }

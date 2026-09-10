@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import { VIEWS } from '../doc.js';
+import { tokenizeLine } from '@engine/highlight.js';
 
 const props = defineProps({
   title: String,
@@ -18,6 +19,10 @@ const dirty = computed(() => draft.value !== text.value);
 const errors = computed(() => VIEWS[props.view].parse(draft.value).errors);
 const errorLines = computed(() => new Set(errors.value.map((e) => e.line)));
 const lines = computed(() => draft.value.split('\n'));
+// 逐行 token。用 v-for 渲染 <span>（**不是 v-html**）——内容是用户输入，
+// 拼 HTML 就是 XSS；而且 tokenizer 保证「拼回去逐字符等于原行」，所以高亮层
+// 与 textarea 的文字宽度天然对齐。
+const tokens = computed(() => lines.value.map(tokenizeLine));
 
 const auto = ref(false);
 let timer = 0;
@@ -54,10 +59,12 @@ watch([draft, auto], () => {
       <div class="hl-layer" aria-hidden="true">
         <div v-for="(l, i) in lines" :key="i" class="hl-row"
              :class="{ cur: i + 1 === currentLine, bad: errorLines.has(i + 1) }">
-          <span class="ln">{{ i + 1 }}</span>
+          <span class="ln">{{ i + 1 }}</span><code class="hl-code"><span
+            v-for="(tk, k) in tokens[i]" :key="k" :class="['tk-' + tk.t, tk.g ? 'g-' + tk.g : '']"
+          >{{ tk.s }}</span></code>
         </div>
       </div>
-      <textarea v-model="draft" class="code-edit" spellcheck="false" wrap="off"
+      <textarea v-model="draft" class="code-edit hl-on" spellcheck="false" wrap="off"
                 :style="{ height: lines.length * 21 + 16 + 'px' }"
                 placeholder="时间: 指令名(参数, …);"></textarea>
     </div>
