@@ -67,8 +67,8 @@ export function addSprite(doc, entryIndex) {
 }
 
 /** 触发浏览器下载。 */
-export function download(bytes, filename) {
-  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }));
+export function download(bytes, filename, mimeType = 'application/octet-stream') {
+  const url = URL.createObjectURL(new Blob([bytes], { type: mimeType }));
   const a = document.createElement('a');
   a.href = url; a.download = filename; a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);

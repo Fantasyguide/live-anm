@@ -14,6 +14,7 @@ import Stage from './components/Stage.vue';
 import CodePane from './components/CodePane.vue';
 import VmState from './components/VmState.vue';
 import VmInspector from './components/VmInspector.vue';
+import GifExport from './components/GifExport.vue';
 
 const doc = ref(null);
 const file = shallowRef(null);
@@ -38,6 +39,7 @@ const syntaxView = ref('thanm');   // 默认给语法糖视图——手写脚本
 const selScript = ref(0);
 const selSprite = ref(0);
 const selectedVm = shallowRef(null);
+const exportCrop = ref(null);
 
 const scripts = computed(() => (doc.value ? flatScripts(doc.value) : []));
 const sprites = computed(() => (doc.value ? flatSprites(doc.value) : []));
@@ -298,9 +300,11 @@ watch(view, (v) => player.value?.resize(v.w, v.h), { deep: true });
       <!-- 右：预览 + VM 列表 -->
       <section class="col side">
         <Stage v-model:view="view" v-model:spawnAt="spawnAt" v-model:speed="speed" v-model:canvasEl="canvasEl"
-               :playing="playing" :frame="frame" :vm-count="vms.length" :skipped="skipped" :errors="errors"
+               :playing="playing" :frame="frame" :vm-count="vms.length" :skipped="skipped" :errors="errors" :crop="exportCrop"
                @spawn="spawn" @toggle="playing ? stop() : play()" @step="stepOnce" @reset="rebuild"
                @center="spawnAt = { x: Math.round(view.w / 2), y: Math.round(view.h / 2) }" />
+        <GifExport :file="file" :script-index="previewScriptIndex" :file-name="fileName" :view="view" :spawn-at="spawnAt"
+                   @crop-change="exportCrop = $event" />
         <VmInspector :vms="vms" :selected="selectedVm" :frame="frame" @pick="(vm) => (selectedVm = vm)" />
       </section>
     </div>

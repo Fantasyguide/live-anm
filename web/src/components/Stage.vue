@@ -1,6 +1,6 @@
 <script setup>
 const props = defineProps({
-  playing: Boolean, frame: Number, vmCount: Number, skipped: Array, errors: Array, canSpawn: Boolean,
+  playing: Boolean, frame: Number, vmCount: Number, skipped: Array, errors: Array, canSpawn: Boolean, crop: Object,
 });
 const emit = defineEmits(['spawn', 'toggle', 'step', 'reset', 'resize', 'center']);
 const view = defineModel('view', { default: { w: 640, h: 480 } });
@@ -19,7 +19,13 @@ const canvasEl = defineModel('canvasEl', { default: null });
     <label class="dim">速度 <input type="range" min="0.1" max="3" step="0.1" v-model.number="speed">{{ speed }}×</label>
   </div>
 
-  <canvas :ref="(el) => (canvasEl = el)" class="stage"></canvas>
+  <div class="stage-frame">
+    <canvas :ref="(el) => (canvasEl = el)" class="stage"></canvas>
+    <div v-if="crop" class="crop-outline" aria-hidden="true" :style="{
+      left: crop.x / view.w * 100 + '%', top: crop.y / view.h * 100 + '%',
+      width: crop.width / view.w * 100 + '%', height: crop.height / view.h * 100 + '%',
+    }"></div>
+  </div>
 
   <div class="bar">
     <label class="dim">画布
@@ -45,3 +51,9 @@ const canvasEl = defineModel('canvasEl', { default: null });
     <ul><li v-for="(e, i) in errors.slice(-3)" :key="i">帧 {{ e.frame }}：{{ e.message }}</li></ul>
   </div>
 </template>
+
+<style scoped>
+.stage-frame { position: relative; width: fit-content; max-width: 100%; }
+.stage-frame .stage { display: block; }
+.crop-outline { position: absolute; border: 1px dashed var(--warn); pointer-events: none; }
+</style>
