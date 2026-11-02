@@ -1,6 +1,6 @@
 <script setup>
 defineProps({ sprites: Array, modelValue: Number });
-const emit = defineEmits(['update:modelValue', 'add', 'change']);
+const emit = defineEmits(['update:modelValue', 'add', 'change', 'apply']);
 </script>
 
 <template>
@@ -18,11 +18,12 @@ const emit = defineEmits(['update:modelValue', 'add', 'change']);
   <div v-if="sprites[modelValue]" class="detail">
     <h3>编辑 sprite #{{ modelValue }}</h3>
     <div class="grid2">
-      <label>x<input type="number" v-model.number="sprites[modelValue].sprite.x" @change="emit('change')" class="num"></label>
-      <label>y<input type="number" v-model.number="sprites[modelValue].sprite.y" @change="emit('change')" class="num"></label>
-      <label>w<input type="number" v-model.number="sprites[modelValue].sprite.w" @change="emit('change')" class="num"></label>
-      <label>h<input type="number" v-model.number="sprites[modelValue].sprite.h" @change="emit('change')" class="num"></label>
+      <label>x<input type="number" v-model.number="sprites[modelValue].sprite.x" @input="emit('change')" class="num"></label>
+      <label>y<input type="number" v-model.number="sprites[modelValue].sprite.y" @input="emit('change')" class="num"></label>
+      <label>w<input type="number" v-model.number="sprites[modelValue].sprite.w" @input="emit('change')" class="num"></label>
+      <label>h<input type="number" v-model.number="sprites[modelValue].sprite.h" @input="emit('change')" class="num"></label>
     </div>
-    <p class="dim tiny">改完点上方「应用并预览」重建文件</p>
+    <button @click="emit('apply')">应用并预览</button>
+    <p class="dim tiny">编辑已保留；应用后更新预览，导出 .anm 可保存文件。</p>
   </div>
 </template>

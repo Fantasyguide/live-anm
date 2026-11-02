@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { VIEWS } from '../doc.js';
 import { tokenizeLine } from '@engine/highlight.js';
 
@@ -8,17 +8,18 @@ const props = defineProps({
   disabled: Boolean,
   currentLine: { type: Number, default: -1 },   // 1 起；-1 = 没在执行
   view: { type: String, default: 'raw' },       // 'raw' | 'thanm'
+  appliedText: { type: String, default: '' },
 });
 const text = defineModel('text', { default: '' });
 const emit = defineEmits(['apply', 'switch-view']);
 
-const draft = ref(text.value);
-watch(text, (v) => { draft.value = v; });
-const dirty = computed(() => draft.value !== text.value);
+// 输入直接保留在文档中，切换脚本和导出都读取同一份文字。
+// 应用只负责更新预览，不再承担保存草稿的职责。
+const dirty = computed(() => text.value !== props.appliedText);
 // 边打字边校验：assemble 不抛，错误逐条带行号，一次全显示
-const errors = computed(() => VIEWS[props.view].parse(draft.value).errors);
+const errors = computed(() => VIEWS[props.view].parse(text.value).errors);
 const errorLines = computed(() => new Set(errors.value.map((e) => e.line)));
-const lines = computed(() => draft.value.split('\n'));
+const lines = computed(() => text.value.split('\n'));
 // 逐行 token。用 v-for 渲染 <span>（**不是 v-html**）——内容是用户输入，
 // 拼 HTML 就是 XSS；而且 tokenizer 保证「拼回去逐字符等于原行」，所以高亮层
 // 与 textarea 的文字宽度天然对齐。
@@ -26,13 +27,14 @@ const tokens = computed(() => lines.value.map(tokenizeLine));
 
 const auto = ref(false);
 let timer = 0;
-function apply() { text.value = draft.value; emit('apply'); }
+function apply() { clearTimeout(timer); emit('apply'); }
 // 自动应用：停手 500ms 且没有错误才重建，免得每敲一个字符就重跑一遍
-watch([draft, auto], () => {
+watch([text, auto], () => {
   clearTimeout(timer);
   if (!auto.value || props.disabled) return;
   timer = setTimeout(() => { if (!errors.value.length && dirty.value) apply(); }, 500);
 });
+onBeforeUnmount(() => clearTimeout(timer));
 </script>
 
 <template>
@@ -41,7 +43,7 @@ watch([draft, auto], () => {
       <b>{{ title }}</b>
       <span class="dim tiny">{{ lines.length }} 行</span>
       <span v-if="errors.length" class="warn tiny">{{ errors.length }} 处错误</span>
-      <span v-else-if="dirty" class="warn tiny">已修改（预览还是上次应用的版本）</span>
+      <span v-else-if="dirty" class="warn tiny">编辑已保留，尚未应用到预览</span>
       <span class="spacer"></span>
       <!-- 原始视图贴着机器（时间在每条指令上、跳转是原始字节偏移）；
            thanm 视图贴着人（时间标签行 + 跳转标签 + sprite/script 名）。两边产出同一份指令。 -->
@@ -64,7 +66,7 @@ watch([draft, auto], () => {
           >{{ tk.s }}</span></code>
         </div>
       </div>
-      <textarea v-model="draft" class="code-edit hl-on" spellcheck="false" wrap="off"
+      <textarea v-model="text" :disabled="disabled" class="code-edit hl-on" spellcheck="false" wrap="off"
                 :style="{ height: lines.length * 21 + 16 + 'px' }"
                 placeholder="时间: 指令名(参数, …);"></textarea>
     </div>

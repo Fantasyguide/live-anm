@@ -1,9 +1,9 @@
 // 可编辑文档模型：`.anm` 字节 ↔ 「entry / sprite / script 文本」的中间层。
 // Vue 组件只碰这个模型，不直接碰字节。
-import { parseAnm } from '@engine/format/anm-v8.js';
-import { buildAnmFile } from '@engine/format/anm-v8-write.js';
-import { assemble, disassembleText } from '@engine/asm.js';
-import { toThanm, fromThanm } from '@engine/thanm-syntax.js';
+import { parseAnm } from '../../src/format/anm-v8.js';
+import { buildAnmFile } from '../../src/format/anm-v8-write.js';
+import { assemble, disassembleText } from '../../src/asm.js';
+import { toThanm, fromThanm } from '../../src/thanm-syntax.js';
 
 // 两种视图：'raw' 贴着机器（时间写在每条指令上、跳转是原始字节偏移），
 // 'thanm' 贴着人（时间标签行 + 跳转标签 + sprite/script 名）。两边产出同一份指令。
@@ -50,7 +50,7 @@ export function docToBytes(doc, view = 'raw') {
       return { id: e.scripts[i]?.id ?? i, instructions: r.instructions };
     }),
   }));
-  return { bytes: buildAnmFile({ entries }), errors, sourceLines };
+  return { bytes: errors.length ? null : buildAnmFile({ entries }), errors, sourceLines };
 }
 
 export function addScript(doc, entryIndex, view = 'raw') {
