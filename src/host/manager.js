@@ -143,6 +143,12 @@ export function createManager(file, opts = {}) {
     return vm;
   }
 
+  // 新根没有父子链可供 collectChildren 发现，接收 handler 返回值直接登记。
+  // base handler 已完成创建预跑；step 的快照确保它到下一帧才再次推进。
+  for (const opcode of [504, 506]) {
+    ops[opcode] = (vm, args, instr) => register(baseOps[opcode](vm, args, instr));
+  }
+
   /**
    * 建一个顶层 VM 跑指定的全局 script 序号。
    *
@@ -186,7 +192,7 @@ export function createManager(file, opts = {}) {
       if (!vm.alive) continue;
       stepFrame(vm, ops);
     }
-    // 收编：`500–506` 的 handler 会把新 VM 挂进父的子链，但 stepFrame 不把返回值交出来，
+    // 收编：`500–503/505` 的 handler 会把新 VM 挂进父的子链，但 stepFrame 不把返回值交出来，
     // 所以走子链发现它们（08 §5 的 prepend）。
     for (const vm of vms.slice()) collectChildren(vm);
     // 回收：`th16:0x46e660` 是「子先于己」的递归销毁。destroyTree 已经复刻了那套。

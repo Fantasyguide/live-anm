@@ -170,7 +170,7 @@ watch(view, (v) => player.value?.resize(v.w, v.h), { deep: true });
 
       <!-- 右：预览 + VM 列表 -->
       <section class="col side">
-        <Stage v-model:view="syntaxView" v-model:spawnAt="spawnAt" v-model:speed="speed" v-model:canvasEl="canvasEl"
+        <Stage v-model:view="view" v-model:spawnAt="spawnAt" v-model:speed="speed" v-model:canvasEl="canvasEl"
                :playing="playing" :frame="frame" :vm-count="vms.length" :skipped="skipped" :errors="errors"
                @spawn="spawn" @toggle="playing ? stop() : play()" @step="stepOnce" @reset="rebuild"
                @center="spawnAt = { x: Math.round(view.w / 2), y: Math.round(view.h / 2) }" />

@@ -167,6 +167,33 @@ test('step：500 建出来的子 VM 会被收编进列表（走子链发现，08
   assert.equal(child.spriteSize.x, 8, '子的 sprite 也被宿主解析了');
 });
 
+test('504/506 的新根 VM 收编后持续更新绘制，创建者删除不影响它', () => {
+  for (const opcode of [504, 506]) {
+    const args = opcode === 504 ? [1] : [1, f32b(10), f32b(20)];
+    const m = createManager(mkFile([
+      { instructions: [ins(opcode, args), ins(1)] },
+      { instructions: [ins(300, [0]),
+        ins(102, [10000, 1], { paramMask: 1 }),
+        ins(102, [10000, 2], { paramMask: 1, time: 1 }),
+        ins(1, [], { time: 2 })] },
+    ]));
+    const source = m.spawn(0);
+    m.step();
+    assert.equal(source.alive, false);
+    assert.equal(m.vms.length, 1, `opcode ${opcode} 应留下新根 VM`);
+    const root = m.vms[0];
+    assert.equal(ensureChildState(root).parent, null);
+    assert.equal(root.i[0], 1, '创建帧仅执行已有预跑，不再额外推进');
+    assert.equal(m.drawList()[0].vm, root, '预跑选中的 sprite 当帧可画');
+    m.step();
+    assert.equal(root.i[0], 3, '下一帧继续执行新根脚本');
+    assert.equal(m.drawList()[0].vm, root);
+    m.step();
+    assert.equal(root.alive, false);
+    assert.equal(m.vms.length, 0, '新根结束后正常回收');
+  }
+});
+
 test('step：父死时整棵子树一起销毁（`th16:0x46e660` 子先于己）', () => {
   const file = mkFile([
     { instructions: [ins(500, [1]), ins(1, [])] }, // 父：建子后立刻 delete
