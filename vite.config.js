@@ -19,7 +19,7 @@ export default defineConfig({
     outDir: here('dist'),
     emptyOutDir: true,
     rollupOptions: {
-      input: { main: here('web/index.html'), selftest: here('web/selftest.html') },
+      input: { main: here('web/index.html'), selftest: here('web/selftest.html'), agent: here('web/agent.html') },
     },
   },
 });

@@ -15,6 +15,8 @@ import CodePane from './components/CodePane.vue';
 import VmState from './components/VmState.vue';
 import VmInspector from './components/VmInspector.vue';
 import GifExport from './components/GifExport.vue';
+import PreviewDivider from './components/PreviewDivider.vue';
+import SpritePreview from './components/SpritePreview.vue';
 
 const doc = ref(null);
 const file = shallowRef(null);
@@ -40,9 +42,12 @@ const selScript = ref(0);
 const selSprite = ref(0);
 const selectedVm = shallowRef(null);
 const exportCrop = ref(null);
+const workspaceEl = ref(null);
+const previewShare = ref(32);
 
 const scripts = computed(() => (doc.value ? flatScripts(doc.value) : []));
 const sprites = computed(() => (doc.value ? flatSprites(doc.value) : []));
+const currentSprite = computed(() => sprites.value[selSprite.value] ?? null);
 const cur = computed(() => scripts.value[selScript.value] ?? null);
 // 新建 script 会移动后续 entry 的全局序号；旧预览仍按 entry 和内部序号对应。
 const previewScriptIndex = computed(() => !cur.value || !file.value ? -1 : file.value.scripts.findIndex(
@@ -163,7 +168,10 @@ function onAddScript() {
   markEdited();
 }
 function onAddSprite() {
-  addSprite(doc.value, cur.value?.entryIndex ?? 0);
+  const entryIndex = currentSprite.value?.entryIndex ?? cur.value?.entryIndex ?? 0;
+  const i = doc.value.entries[entryIndex].sprites.length;
+  addSprite(doc.value, entryIndex);
+  selSprite.value = sprites.value.findIndex((s) => s.entryIndex === entryIndex && s.i === i);
   markEdited();
 }
 function markEdited() {
@@ -274,7 +282,7 @@ watch(view, (v) => player.value?.resize(v.w, v.h), { deep: true });
       </p>
     </div>
 
-    <div v-else class="grid">
+    <div v-else ref="workspaceEl" class="grid" :style="{ '--preview-width': previewShare + '%' }">
       <!-- 左：表 -->
       <section class="col side">
         <div class="tabs">
@@ -287,18 +295,24 @@ watch(view, (v) => player.value?.resize(v.w, v.h), { deep: true });
                     @add="onAddSprite" @change="markEdited" @apply="rebuild" />
       </section>
 
-      <!-- 中：VM 状态 + 代码（主导区） -->
+      <!-- 中：脚本编辑 / Sprite 静态预览 -->
       <section class="col center">
-        <VmState :vm="selectedVm" :frame="frame" :case-labels="caseLabels" @interrupt="onInterrupt" />
-        <CodePane v-model:text="editorText" :disabled="!cur" :current-line="currentLine" :view="syntaxView"
-                  :applied-text="previewTexts[previewScriptIndex] ?? ''"
-                  @switch-view="onSwitchView"
-                  :title="cur ? `script #${selScript} · ${cur.entryName}` : '（未选中）'"
-                  @apply="rebuild" />
+        <div v-show="tab === 'script'" class="script-editor">
+          <VmState :vm="selectedVm" :frame="frame" :case-labels="caseLabels" @interrupt="onInterrupt" />
+          <CodePane v-model:text="editorText" :disabled="!cur" :current-line="currentLine" :view="syntaxView"
+                    :applied-text="previewTexts[previewScriptIndex] ?? ''"
+                    @switch-view="onSwitchView"
+                    :title="cur ? `script #${selScript} · ${cur.entryName}` : '（未选中）'"
+                    @apply="rebuild" />
+        </div>
+        <SpritePreview v-if="tab === 'sprite'" :entry="currentSprite ? doc.entries[currentSprite.entryIndex] : null"
+                       :sprite="currentSprite?.sprite" :sprite-index="selSprite" />
       </section>
 
+      <PreviewDivider v-model="previewShare" :workspace="workspaceEl" />
+
       <!-- 右：预览 + VM 列表 -->
-      <section class="col side">
+      <section id="preview-pane" class="col side">
         <Stage v-model:view="view" v-model:spawnAt="spawnAt" v-model:speed="speed" v-model:canvasEl="canvasEl"
                :playing="playing" :frame="frame" :vm-count="vms.length" :skipped="skipped" :errors="errors" :crop="exportCrop"
                @spawn="spawn" @toggle="playing ? stop() : play()" @step="stepOnce" @reset="rebuild"

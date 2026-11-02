@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue';
+import PagedList from './PagedList.vue';
 
 const props = defineProps({ scripts: Array, entries: Array, modelValue: Number });
 const emit = defineEmits(['update:modelValue', 'add']);
@@ -21,15 +22,17 @@ const rows = computed(() => {
     <button class="mini" @click="emit('add')">+ 新建</button>
   </h2>
   <input v-model="filter" class="filter" placeholder="按序号或 entry 名过滤">
-  <ul class="list">
-    <li v-for="s in rows" :key="s.index" :class="{ sel: s.index === modelValue }"
-        @click="emit('update:modelValue', s.index)">
-      <b>#{{ s.index }}</b>
-      <span class="dim">{{ s.entryName }}</span>
-      <!-- 01 §5：script 的 id 是装饰性的，取脚本一律用跨 entry 的运行序号 -->
-      <span v-if="s.id !== s.index" class="warn" title="记录里的 id 与全局序号不一致——取脚本一律用序号">
-        id={{ s.id }}
-      </span>
-    </li>
-  </ul>
+  <PagedList :rows="rows" :selected-index="modelValue" :filter="filter" label="Script" v-slot="{ rows: pageRows }">
+    <ul class="list">
+      <li v-for="s in pageRows" :key="s.index" :class="{ sel: s.index === modelValue }"
+          @click="emit('update:modelValue', s.index)">
+        <b>#{{ s.index }}</b>
+        <span class="dim">{{ s.entryName }}</span>
+        <!-- 01 §5：script 的 id 是装饰性的，取脚本一律用跨 entry 的运行序号 -->
+        <span v-if="s.id !== s.index" class="warn" title="记录里的 id 与全局序号不一致——取脚本一律用序号">
+          id={{ s.id }}
+        </span>
+      </li>
+    </ul>
+  </PagedList>
 </template>
