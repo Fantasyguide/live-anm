@@ -339,9 +339,119 @@ test('buildGeometry：按 render mode 分发，未覆盖的显式抛', () => {
   const q = buildGeometry(mkVm(0), ctx);
   assert.equal(q.primitive, 'quad');
   assert.equal(buildGeometry(mkVm(9), Object.assign({}, ctx)).mode, 9);
-  for (const m of [4, 8, 15, 16, 17, 20]) {
+  for (const m of [4, 8, 15]) {
     assert.throws(() => buildGeometry(mkVm(m), ctx), /未实现/, `mode ${m} 应抛`);
   }
+});
+
+test('rect：无贴图、局部 X 渐变，忽略 sprite 的 scale2 与 anchorOffset', () => {
+  const vm = mkVm(20);
+  vm.spriteSize = { x: 20, y: 10 };
+  vm.pos = { x: 30, y: 40, z: 99 };
+  vm.color = 0xff112233;
+  Object.assign(vm._general, { color2: 0x80445566, scale2: { x: 9, y: 9 }, anchorOffset: { x: 7, y: 8 } });
+  const g = buildGeometry(vm);
+  assert.equal(g.textured, false);
+  assert.equal(g.primitive, 'quad');
+  assert.deepEqual(g.vertices.map(v => [v.x, v.y, v.z, v.color]), [
+    [20, 35, 0, 0xff112233], [40, 35, 0, 0x80445566],
+    [20, 45, 0, 0xff112233], [40, 45, 0, 0x80445566],
+  ]);
+});
+
+test('rect：直接父缩放/旋转与分辨率影响尺寸；ignoreParent 同时关闭继承', () => {
+  const parent = mkVm();
+  parent.scale = { x: 3, y: 4 };
+  parent.rotation.z = Math.PI / 2;
+  const vm = mkVm(16);
+  vm.spriteSize = { x: 10, y: 8 };
+  vm.scale = { x: 2, y: 3 };
+  vm.flagsHi |= 0x100000;
+  ensureChildState(vm).parent = parent;
+  let q = buildGeometry(vm, { resolutionRatio: 2 });
+  assert.ok(close(q.vertices[0].x, 96) && close(q.vertices[0].y, -60));
+  vm.flagsHi |= 0x10000;
+  q = buildGeometry(vm, { resolutionRatio: 2 });
+  assert.deepEqual(xy(q.vertices[0]), [-20, -24]);
+});
+
+test('rect shadow：先画尺寸各加 1 的半 alpha 图，再画原图，位置不偏移', () => {
+  const vm = mkVm(22);
+  vm.spriteSize = { x: 20, y: 10 };
+  vm.color = 0xff112233; vm._general.color2 = 0x80445566;
+  const g = buildGeometry(vm);
+  assert.equal(g.primitive, 'triangles');
+  assert.equal(g.vertices.length, 12);
+  assert.deepEqual(g.vertices.slice(0, 2).map(v => [v.x, v.y, v.color]), [
+    [-10.5, -5.5, 0x7f112233], [10.5, -5.5, 0x40445566],
+  ]);
+  assert.deepEqual(g.vertices.slice(6, 8).map(v => [v.x, v.y, v.color]), [
+    [-10, -5, 0xff112233], [10, -5, 0x80445566],
+  ]);
+});
+
+test('矩形边框闭合、线段沿局部 X；colorMode 非零才选第二端颜色', () => {
+  const vm = mkVm(27);
+  vm.spriteSize = { x: 20, y: 10 };
+  vm.color = 0xff112233; vm._general.color2 = 0xff445566;
+  vm.flagsLo |= 2 << 17;
+  const border = buildGeometry(vm);
+  assert.equal(border.primitive, 'linestrip');
+  assert.deepEqual(border.vertices.map(v => [v.x, v.y, v.color]), [
+    [-10, -5, 0xff112233], [10, -5, 0xff445566], [10, 5, 0xff445566],
+    [-10, 5, 0xff112233], [-10, -5, 0xff112233],
+  ]);
+  vm.flagsLo = (vm.flagsLo & ~0x3e000000) | (26 << 25);
+  assert.deepEqual(buildGeometry(vm).vertices.map(v => [v.x, v.y, v.color]), [
+    [-10, 0, 0xff112233], [10, 0, 0xff445566],
+  ]);
+});
+
+test('poly：四边形 fan 的中心色/边缘色与闭合点，边框只用 color1', () => {
+  const vm = mkVm(17);
+  vm.spriteSize = { x: 10, y: 4 }; vm.i[0] = 4;
+  vm.color = 0xff112233; vm._general.color2 = 0xff445566;
+  const g = buildGeometry(vm);
+  assert.equal(g.primitive, 'trianglefan');
+  assert.equal(g.vertices.length, 6);
+  assert.equal(g.vertices[0].color, 0xff112233);
+  assert.deepEqual(xy(g.vertices[0]), [0, 0]);
+  const expected = [[10, 0], [0, 10], [-10, 0], [0, -10], [10, 0]];
+  g.vertices.slice(1).forEach((v, i) => {
+    assert.ok(close(v.x, expected[i][0]) && close(v.y, expected[i][1]));
+    assert.equal(v.color, 0xff445566);
+  });
+  vm.flagsLo = (vm.flagsLo & ~0x3e000000) | (18 << 25);
+  const border = buildGeometry(vm);
+  assert.equal(border.primitive, 'linestrip');
+  assert.equal(border.vertices.length, 5);
+  assert.ok(border.vertices.every(v => v.color === 0xff112233));
+});
+
+test('drawRing：厚度按 Y 缩放，半径按 X 缩放，内外圈顺序及闭合点', () => {
+  const vm = mkVm(19);
+  vm.spriteSize = { x: 10, y: 4 }; vm.i[0] = 4;
+  vm.scale = { x: 2, y: 3 };
+  const g = buildGeometry(vm);
+  assert.equal(g.primitive, 'trianglestrip');
+  assert.equal(g.textured, false);
+  assert.equal(g.vertices.length, 10);
+  assert.deepEqual(g.vertices.slice(0, 2).map(xy), [[14, 0], [26, 0]]);
+  assert.ok(close(g.vertices[8].x, 14) && close(g.vertices[9].x, 26));
+});
+
+test('poly：分辨率 mode3 只放大中心，非正边数为空，正边数允许退化', () => {
+  const vm = mkVm(17);
+  vm.pos = { x: 10, y: 20, z: 7 };
+  vm.spriteSize = { x: 10, y: 4 }; vm.i[0] = 4;
+  vm.flagsHi |= 0x300000;
+  const g = buildGeometry(vm, { resolutionRatio: 2 });
+  assert.deepEqual(xy(g.vertices[0]), [20, 40]);
+  assert.deepEqual(xy(g.vertices[1]), [30, 40]);
+  vm.i[0] = 0;
+  assert.equal(buildGeometry(vm).vertices.length, 0);
+  vm.i[0] = 1;
+  assert.equal(buildGeometry(vm).vertices.length, 3);
 });
 
 test('renderModeOf / effectiveRotZ 的基本契约', () => {

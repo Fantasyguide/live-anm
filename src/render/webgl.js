@@ -59,11 +59,13 @@ void main() {
 export const FRAGMENT_SHADER = `
 precision mediump float;
 uniform sampler2D uTex;
+uniform bool uTextured;
 uniform float uAlphaRef;  // < 0 = 关掉 alpha test（blend mode 3）
 varying vec4 vColor;
 varying vec2 vUv;
 void main() {
-  vec4 c = texture2D(uTex, vUv) * vColor;
+  vec4 c = vColor;
+  if (uTextured) c = texture2D(uTex, vUv) * vColor;
   if (c.a < uAlphaRef) discard;
   gl_FragColor = c;
 }`;
@@ -104,6 +106,7 @@ export function createRenderer(gl, opts = {}) {
     uMatrix: gl.getUniformLocation(program, 'uMatrix'),
     uModelSpace: gl.getUniformLocation(program, 'uModelSpace'),
     uTex: gl.getUniformLocation(program, 'uTex'),
+    uTextured: gl.getUniformLocation(program, 'uTextured'),
     uAlphaRef: gl.getUniformLocation(program, 'uAlphaRef'),
   };
 
@@ -118,7 +121,8 @@ export function createRenderer(gl, opts = {}) {
 
   // §4.2 的四项状态在真机各带一份「与上次不同才 flush + 重设」的缓存
   // （`mgr+0x184fbb4/bba/bbc/bbd`）。这里照抄这个缓存——既是保真，也省掉每批一堆冗余调用。
-  const cache = { blend: null, filter: null, addressU: null, addressV: null, texture: null, alphaRef: null, modelSpace: null };
+  const cache = { blend: null, filter: null, addressU: null, addressV: null, texture: null, alphaRef: null, modelSpace: null, textured: null };
+  let solidTexture = null;
 
   let batch = [];
   let batchKey = null;
@@ -183,17 +187,29 @@ export function createRenderer(gl, opts = {}) {
           '在逆出来之前由调用方自己给一个矩阵，而不是这里编一个。',
       );
     }
-    const key = JSON.stringify([st, ctx.texture === undefined ? null : 'tex', geo.primitive, modelSpace]);
-    if (batchKey !== null && (key !== batchKey || ctx.texture !== cache.texture)) flush();
+    const textured = geo.textured !== false;
+    const key = JSON.stringify([st, geo.primitive, modelSpace, textured]);
+    if (batchKey !== null && (key !== batchKey || (textured && ctx.texture !== cache.texture))) flush();
+    // 即使 shader 关闭采样，也给活动 sampler 一个完整纹理，避免 WebGL 校验受绑定状态影响。
+    if (!textured && !solidTexture) {
+      solidTexture = uploadTexture(gl, { width: 1, height: 1, rgba: new Uint8Array([255, 255, 255, 255]) });
+    }
+    const texture = textured ? ctx.texture : solidTexture;
     batchKey = key;
     batchPrimitive = geo.primitive;
-    if (ctx.texture !== cache.texture) {
-      gl.bindTexture(glEnum(gl, 'TEXTURE_2D'), ctx.texture);
-      cache.texture = ctx.texture;
+    if (texture !== cache.texture) {
+      gl.bindTexture(glEnum(gl, 'TEXTURE_2D'), texture);
+      cache.texture = texture;
+      // 采样参数属于纹理对象；新纹理需要完整设置。
+      cache.filter = cache.addressU = cache.addressV = null;
     }
     applyBlend(st.blend);
     applyAlphaRef(st.blend);
     applySampler(st);
+    if (cache.textured !== textured) {
+      gl.uniform1i(loc.uTextured, textured ? 1 : 0);
+      cache.textured = textured;
+    }
     if (cache.modelSpace !== modelSpace) {
       gl.uniform1i(loc.uModelSpace, modelSpace ? 1 : 0);
       cache.modelSpace = modelSpace;
@@ -213,6 +229,17 @@ export function createRenderer(gl, opts = {}) {
         if (i % 2 === 0) { pushVertex(batch, v[i]); pushVertex(batch, v[i + 1]); pushVertex(batch, v[i + 2]); }
         else { pushVertex(batch, v[i + 1]); pushVertex(batch, v[i]); pushVertex(batch, v[i + 2]); }
       }
+    } else if (geo.primitive === 'trianglefan') {
+      const v = geo.vertices;
+      for (let i = 1; i + 1 < v.length; i++) {
+        pushVertex(batch, v[0]); pushVertex(batch, v[i]); pushVertex(batch, v[i + 1]);
+      }
+    } else if (geo.primitive === 'linestrip') {
+      const v = geo.vertices;
+      // 独立线段避免不同 VM 的 strip 在批次内被连起来。
+      for (let i = 0; i + 1 < v.length; i++) { pushVertex(batch, v[i]); pushVertex(batch, v[i + 1]); }
+    } else if (geo.primitive === 'triangles' || geo.primitive === 'lines') {
+      for (const v of geo.vertices) pushVertex(batch, v);
     } else {
       throw new Error(`webgl: 不认识的 primitive ${JSON.stringify(geo.primitive)}`);
     }
@@ -231,7 +258,8 @@ export function createRenderer(gl, opts = {}) {
     gl.vertexAttribPointer(loc.aColor, 4, FLOAT, false, stride, 12);
     gl.enableVertexAttribArray(loc.aUv);
     gl.vertexAttribPointer(loc.aUv, 2, FLOAT, false, stride, 28);
-    gl.drawArrays(glEnum(gl, 'TRIANGLES'), 0, data.length / FLOATS_PER_VERTEX);
+    const primitive = batchPrimitive === 'lines' || batchPrimitive === 'linestrip' ? 'LINES' : 'TRIANGLES';
+    gl.drawArrays(glEnum(gl, primitive), 0, data.length / FLOATS_PER_VERTEX);
     batch = [];
     batchKey = null;
     batchPrimitive = null;
@@ -253,6 +281,7 @@ export function createRenderer(gl, opts = {}) {
       gl.uniform2f(loc.uViewport, width, height);
     },
     dispose() {
+      if (solidTexture) gl.deleteTexture(solidTexture);
       gl.deleteBuffer(buffer);
       gl.deleteProgram(program);
     },

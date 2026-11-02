@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, ref, shallowRef, watch } from 'vue';
 import { createPlayer } from './player.js';
+import { usePlayback } from './composables/usePlayback.js';
 import { toDoc, docToBytes, flatScripts, flatSprites, addScript, addSprite, download, switchView } from './doc.js';
 import { flattenFile } from '@engine/host/manager.js';
 import { parseAnm } from '@engine/format/anm-v8.js';
@@ -22,9 +23,7 @@ const buildErrors = ref([]);
 const dragging = ref(false);
 const player = shallowRef(null);
 const canvasEl = ref(null);
-const playing = ref(false);
-const frame = ref(0);
-const speed = ref(1);
+const { playing, frame, speed, vms, skipped, errors, stepOnce, play, stop } = usePlayback(player);
 const view = ref({ w: 640, h: 480 });
 const spawnAt = ref({ x: 320, y: 240 });
 const tab = ref('script');
@@ -32,7 +31,6 @@ const syntaxView = ref('thanm');   // 默认给语法糖视图——手写脚本
 const selScript = ref(0);
 const selSprite = ref(0);
 const selectedVm = shallowRef(null);
-let raf = 0, acc = 0, last = 0;
 
 const scripts = computed(() => (doc.value ? flatScripts(doc.value) : []));
 const sprites = computed(() => (doc.value ? flatSprites(doc.value) : []));
@@ -41,9 +39,6 @@ const editorText = computed({
   get: () => (cur.value ? doc.value.entries[cur.value.entryIndex].scriptTexts[cur.value.i] : ''),
   set: (v) => { if (cur.value) doc.value.entries[cur.value.entryIndex].scriptTexts[cur.value.i] = v; },
 });
-const vms = computed(() => (frame.value, player.value?.manager.vms ?? []));
-const skipped = computed(() => (frame.value, player.value?.manager.skipped ?? []));
-const errors = computed(() => (frame.value, player.value?.errors ?? []));
 
 /** 选中的 VM 跑的是哪个全局 script —— 靠指令数组的**引用相同**来认（createVm 存的就是它）。 */
 const vmScriptIndex = computed(() => {
@@ -99,17 +94,6 @@ function spawn() {
     player.value.render();
   } catch (e) { error.value = e.message; }
 }
-function stepOnce() { if (!player.value) return; player.value.step(); player.value.render(); frame.value = player.value.frame; }
-function loop(t) {
-  if (!playing.value) return;
-  if (!last) last = t;
-  acc += (t - last) * 0.06 * speed.value; last = t;
-  let g = 0; while (acc >= 1 && g++ < 8) { player.value.step(); acc -= 1; }
-  player.value.render(); frame.value = player.value.frame;
-  raf = requestAnimationFrame(loop);
-}
-function play() { if (!player.value) return; playing.value = true; last = 0; acc = 0; raf = requestAnimationFrame(loop); }
-function stop() { playing.value = false; if (raf) cancelAnimationFrame(raf); raf = 0; }
 function onInterrupt(l) { if (!selectedVm.value) return; triggerInterrupt(selectedVm.value, l); stepOnce(); }
 function onSwitchView(to) {
   if (to === syntaxView.value || !doc.value) return;

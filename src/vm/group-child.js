@@ -201,6 +201,9 @@ function inheritFileContext(creatorVm, newVm) {
   const newState = ensureChildState(newVm);
   newState.scripts = creatorState.scripts;
   newState.ops = creatorState.ops;
+  // 流是宿主全局态，不克隆状态；必须在创建即 tick 之前传入子/新根 VM。
+  newVm.prng = creatorVm.prng;
+  newVm.prngReplay = creatorVm.prngReplay;
 }
 
 // ── 08-child.md #500/#501/#502/#503/#505 共用：create_managed_child（02 §8.1「child」列）──

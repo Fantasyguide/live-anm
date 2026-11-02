@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createManager, createOps, flattenFile } from '../src/host/manager.js';
 import { ensureChildState } from '../src/vm/group-child.js';
-import { triggerInterrupt } from '../src/vm/core.js';
+import { triggerInterrupt, resolveArg } from '../src/vm/core.js';
 import { disassemble, lineOfPc } from '../src/disasm.js';
 import { buildAnm } from '../src/format/anm-v8-write.js';
 import { parseAnm } from '../src/format/anm-v8.js';
@@ -29,6 +29,41 @@ function mkFile(scripts, { spriteCount = 2, texSize = 64 } = {}) {
 
 test('createOps：六组合起来正好 135 条，且互不冲突', () => {
   assert.equal(Object.keys(createOps()).length, 135);
+});
+
+test('默认宿主接通 rand/randF/spriteRand/mathCirclePosRand', () => {
+  const m = createManager(mkFile([{ instructions: [
+    ins(122, [10000, 1000], { paramMask: 1 }),
+    ins(123, [f32b(10004), f32b(1)], { paramMask: 1 }),
+    ins(301, [0, 2]),
+    ins(131, [f32b(10005), f32b(10006), f32b(1), f32b(3)], { paramMask: 3 }),
+    ins(3),
+  ] }]));
+  const vm = m.spawn(0);
+  m.step();
+  assert.equal(vm.i[0], 0x30ddeff1 % 1000);
+  assert.equal(vm.f[0], Math.fround(0xc4a41f50 / 0x100000000));
+  assert.equal(vm.spriteId, 1);
+  assert.ok(Number.isFinite(vm.f[1]) && Number.isFinite(vm.f[2]));
+  assert.equal(vm.prng(), 0x937d7673, '131 消费两次，下一次应为第六个输出');
+});
+
+test('子 VM 创建预跑前共享两条独立流，所有顶层 VM 也共享宿主序列', () => {
+  const file = mkFile([
+    { instructions: [ins(500, [1]), ins(122, [10000, 1000], { paramMask: 1 }), ins(3)] },
+    { instructions: [ins(122, [10000, 1000], { paramMask: 1 }), ins(3)] },
+  ]);
+  const m = createManager(file), parent = m.spawn(0), other = m.spawn(1);
+  m.step();
+  const child = ensureChildState(parent).children[0];
+  assert.equal(child.i[0], 0x30ddeff1 % 1000);
+  assert.equal(parent.i[0], 0xc4a41f50 % 1000);
+  assert.equal(other.i[0], 0x861d28f3 % 1000);
+  assert.equal(resolveArg(child, f32b(10031), true, 'float'), Math.fround(0x30ddeff1 / 0x100000000));
+  assert.equal(resolveArg(parent, f32b(10031), true, 'float'), Math.fround(0xc4a41f50 / 0x100000000));
+  assert.equal(resolveArg(child, f32b(10011), true, 'float'), Math.fround(0xd0a96f44 / 0x100000000));
+  const fresh = createManager(file).spawn(1);
+  assert.equal(fresh.prng(), 0x30ddeff1, '新宿主从自己的种子开始');
 });
 
 // ── 01 §4/§5：全局序号 ──────────────────────────────────────────────────────────
@@ -196,6 +231,26 @@ test('drawList：正常 sprite 出一份 quad 几何 + 对应 entry 的贴图', 
   assert.deepEqual([d.geometry.vertices[0].x, d.geometry.vertices[0].y], [-4, -8]);
   // UV 取的是该 sprite 的四角
   assert.deepEqual([d.geometry.vertices[0].u, d.geometry.vertices[0].v], file.sprites[1].uv[0]);
+});
+
+test('无 sprite / 无贴图也能提交九种彩色图元，模式切回 sprite 后仍跳过', () => {
+  const cases = [[603, [20, 10]], [604, [10, 4]], [605, [10, 4]],
+    [606, [20, 10]], [607, [20, 10]], [608, [20, 10]], [611, [10, 4, 4]],
+    [612, [20, 10]], [613, [20, 10]]];
+  for (const [opcode, values] of cases) {
+    const args = values.map((v, i) => ((opcode === 604 || opcode === 605) && i === 1) || (opcode === 611 && i === 2) ? v : f32b(v));
+    const file = mkFile([{ instructions: [ins(opcode, args), ins(3)] }], { spriteCount: 0 });
+    file.textures = [];
+    const m = createManager(file), vm = m.spawn(0);
+    m.step();
+    const list = m.drawList();
+    assert.equal(list.length, 1, `opcode ${opcode}`);
+    assert.equal(list[0].geometry.textured, false);
+    assert.equal(list[0].texture, null);
+    assert.equal(m.skipped.length, 0);
+    vm.flagsLo &= ~0x3e000000;
+    assert.equal(m.drawList().length, 0);
+  }
 });
 
 // ── 「摆在哪」：entity_pos 是宿主的杠杆 ─────────────────────────────────────────

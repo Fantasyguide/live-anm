@@ -11,7 +11,7 @@ const ENUM_NAMES = [
   'VERTEX_SHADER', 'FRAGMENT_SHADER', 'LINK_STATUS', 'COMPILE_STATUS', 'RGBA', 'UNSIGNED_BYTE',
   'SRC_ALPHA', 'ONE_MINUS_SRC_ALPHA', 'ONE', 'ZERO', 'FUNC_ADD', 'FUNC_REVERSE_SUBTRACT',
   'ONE_MINUS_DST_COLOR', 'ONE_MINUS_SRC_COLOR', 'DST_COLOR', 'DST_ALPHA', 'ONE_MINUS_DST_ALPHA',
-  'MIN', 'MAX', 'NEAREST', 'LINEAR', 'REPEAT', 'CLAMP_TO_EDGE', 'MIRRORED_REPEAT',
+  'MIN', 'MAX', 'NEAREST', 'LINEAR', 'REPEAT', 'CLAMP_TO_EDGE', 'MIRRORED_REPEAT', 'LINES',
 ];
 
 function mockGl({ minMax = true } = {}) {
@@ -23,7 +23,7 @@ function mockGl({ minMax = true } = {}) {
     'uniformMatrix4fv', 'bindTexture', 'texParameteri', 'bindBuffer', 'bufferData',
     'enableVertexAttribArray', 'vertexAttribPointer', 'drawArrays', 'deleteBuffer',
     'deleteProgram', 'attachShader', 'linkProgram', 'shaderSource', 'compileShader',
-    'blendFunc', 'blendEquation', 'texImage2D']) gl[m] = rec(m);
+    'blendFunc', 'blendEquation', 'texImage2D', 'deleteTexture']) gl[m] = rec(m);
   gl.createBuffer = () => ({ tag: 'buf' });
   gl.createTexture = () => ({ tag: 'tex' });
   gl.createShader = () => ({ tag: 'shader' });
@@ -201,4 +201,39 @@ test('uploadTexture 传 RGBA8', () => {
   assert.equal(nameOf(gl, c[7]), 'RGBA');
   assert.equal(nameOf(gl, c[8]), 'UNSIGNED_BYTE');
   assert.deepEqual([c[4], c[5]], [2, 1]);
+});
+
+test('无贴图填充与 sprite 交替时先提交旧批次，颜色开关随批次切换', () => {
+  const gl = mockGl(), r = createRenderer(gl);
+  r.draw(quad(), { vm: vm(), texture: 'T' });
+  r.draw({ ...quad(), textured: false }, { vm: vm(), texture: null });
+  assert.equal(of(gl, 'drawArrays').length, 1);
+  assert.equal(of(gl, 'uniform1i').filter(c => c[1].uniform === 'uTextured').at(-1)[2], 0);
+  r.draw(quad(), { vm: vm(), texture: 'T' });
+  assert.equal(of(gl, 'drawArrays').length, 2);
+  assert.equal(of(gl, 'uniform1i').filter(c => c[1].uniform === 'uTextured').at(-1)[2], 1);
+  assert.equal(of(gl, 'bindTexture').at(-1)[2], 'T');
+  r.flush();
+  assert.equal(of(gl, 'drawArrays').length, 3);
+});
+
+test('trianglefan 展开为三角形；linestrip 转独立线段，不连接相邻 VM', () => {
+  const gl = mockGl(), r = createRenderer(gl);
+  r.draw({ ...quad(), textured: false, primitive: 'trianglefan' }, { vm: vm() });
+  r.flush();
+  let data = of(gl, 'bufferData').at(-1)[2];
+  assert.deepEqual(Array.from({ length: data.length / 9 }, (_, i) => data[i * 9]), [0, 1, 2, 0, 2, 3]);
+  const line = { ...quad(), textured: false, primitive: 'linestrip' };
+  r.draw(line, { vm: vm() }); r.draw(line, { vm: vm() }); r.flush();
+  data = of(gl, 'bufferData').at(-1)[2];
+  assert.deepEqual(Array.from({ length: data.length / 9 }, (_, i) => data[i * 9]), [0, 1, 1, 2, 2, 3, 0, 1, 1, 2, 2, 3]);
+  assert.equal(of(gl, 'drawArrays').at(-1)[1], gl.LINES);
+});
+
+test('显式 triangles 与 lines 分别提交，线段不会混入三角形批次', () => {
+  const gl = mockGl(), r = createRenderer(gl);
+  r.draw({ ...quad(), textured: false, primitive: 'triangles', vertices: quad().vertices.slice(0, 3) }, { vm: vm() });
+  r.draw({ ...quad(), textured: false, primitive: 'lines', vertices: quad().vertices.slice(0, 2) }, { vm: vm() });
+  r.flush();
+  assert.deepEqual(of(gl, 'drawArrays').map(c => [c[1], c[3]]), [[gl.TRIANGLES, 3], [gl.LINES, 2]]);
 });

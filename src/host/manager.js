@@ -14,7 +14,9 @@ import { generalGroup, stepFrameTail, ensureGeneralState } from '../vm/group-gen
 import { childGroup, ensureChildState, destroyTree, getRootVm } from '../vm/group-child.js';
 import { drawingGroup } from '../vm/group-drawing.js';
 import { buildGeometry, renderModeOf } from '../render/geometry.js';
+import { isPrimitiveMode } from '../render/primitive-geometry.js';
 import { decodeThtx } from '../format/thtx.js';
+import { createPrng } from '../vm/prng.js';
 
 /** 六组合成一张 ops 表（层 A 的 135 条全在里面）。 */
 export function createOps() {
@@ -78,6 +80,9 @@ export function createManager(file, opts = {}) {
   const ops = { ...baseOps };
   const vms = [];
   const skipped = [];
+  // 同一宿主共享流；A/B 状态独立。独立播放器使用固定初值，重建可复现。
+  const prng = createPrng();
+  const prngReplay = createPrng();
 
   // ── `set_sprite` 的宿主侧落地 ──────────────────────────────────────────────────
   // 真机 `300 sprite` 会调 `set_sprite th16:0x45edb0`，**当场**把贴图的像素尺寸写进
@@ -156,6 +161,8 @@ export function createManager(file, opts = {}) {
       frameTail: stepFrameTail,
       getRootVm,
     });
+    vm.prng = prng;
+    vm.prngReplay = prngReplay;
     const g = ensureGeneralState(vm);
     if (spawnOpts.entityPos) {
       g.entityPos.x = spawnOpts.entityPos.x ?? 0;
@@ -219,18 +226,19 @@ export function createManager(file, opts = {}) {
       if (!vm.alive) continue;
       if ((vm.flagsLo & VISIBLE_BIT) === 0) continue; // 可见位没置，真机也不画
       const host = vm._host ?? {};
-      if (!host.spriteRef) {
+      if (!host.spriteRef && !isPrimitiveMode(renderModeOf(vm))) {
         skipped.push({ vm, reason: host.systemSprite ? 'sprite(-1)：真机换系统贴图，本宿主不加载 ascii.anm' : '还没选过 sprite' });
         continue;
       }
       let geo;
       try {
-        geo = buildGeometry(vm, { spriteUv: host.spriteRef.uv, resolutionRatio: opts.resolutionRatio ?? 1 });
+        geo = buildGeometry(vm, { spriteUv: host.spriteRef?.uv, resolutionRatio: opts.resolutionRatio ?? 1 });
       } catch (err) {
         skipped.push({ vm, mode: renderModeOf(vm), reason: err.message });
         continue;
       }
-      out.push({ vm, geometry: geo, entryIndex: host.spriteRef.entryIndex, texture: file.textures[host.spriteRef.entryIndex] });
+      const entryIndex = geo.textured === false ? null : host.spriteRef.entryIndex;
+      out.push({ vm, geometry: geo, entryIndex, texture: entryIndex === null ? null : file.textures[entryIndex] });
     }
     return out;
   }

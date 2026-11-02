@@ -19,6 +19,7 @@
 //   `space: 'model'`  —— 模型坐标，要走 WORLD 矩阵（只有 mode 24/25，见 09 §3.4）
 import { getRootVm, getParentVm } from '../vm/group-child.js';
 import { ensureGeneralState } from '../vm/group-general.js';
+import { buildPrimitiveGeometry, isPrimitiveMode } from './primitive-geometry.js';
 
 const TWO_PI32 = Math.fround(2 * Math.PI);
 const PI32 = Math.fround(Math.PI);
@@ -410,13 +411,14 @@ export function build3d(vm, ctx = {}) {
 /** 按渲染模式分发。未覆盖的 mode 显式抛，不静默返回空。 */
 export function buildGeometry(vm, ctx = {}) {
   const mode = renderModeOf(vm);
+  if (isPrimitiveMode(mode)) return buildPrimitiveGeometry(vm, finalPos(vm, ctx), ctx.resolutionRatio ?? 1);
   if (mode === 0 || mode === 1 || mode === 2 || mode === 3) return buildSpriteQuad(vm, ctx);
   if (mode === 9) return buildRing(vm, ctx);
   if (mode === 13 || mode === 14) return buildArc(vm, ctx);
   if (mode === 24 || mode === 25) return build3d(vm, ctx);
   throw new Error(
     `buildGeometry: 渲染模式 ${mode} 未实现 —— 已覆盖 0/1/2/3（10-sprite-geometry.md）与 ` +
-      '9/13/14/24/25（09-drawing.md §3）。mode 4/8/15 走 `th16:0x467410`、rect 族（16/20/21/22/26/27）走 ' +
-      '`th16:0x468722`、poly 族（17/18/19）走 `th16:0x4689b3`，这三条路径还没逆（计划里的 B6）。',
+      '9/13/14/24/25（09-drawing.md §3）及无贴图 rect/poly 族（docs/anm-primitives.md）。' +
+      'mode 4/8/15 等路径尚未实现（计划 B6）。',
   );
 }

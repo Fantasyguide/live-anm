@@ -51,8 +51,8 @@ export function createPlayer(canvas, file, opts = {}) {
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     for (const d of manager.drawList()) {
-      const tex = textureFor(d.entryIndex);
-      if (!tex) continue;
+      const tex = d.geometry.textured === false ? null : textureFor(d.entryIndex);
+      if (!tex && d.geometry.textured !== false) continue;
       try {
         renderer.draw(d.geometry, { vm: d.vm, texture: tex });
       } catch (err) {
